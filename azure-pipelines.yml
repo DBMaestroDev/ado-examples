@@ -25,18 +25,12 @@ variables:
   DBM_AUTH_TYPE: 'DBmaestroAccount'
 
 stages:
-- stage: CreatePackage
-  displayName: 'Create DBmaestro Package'
+- stage: ExtractTaskID
+  displayName: 'Extract TaskID from Commit Message'
   jobs:
-  - job: PackageCreation
-    displayName: 'Create Package'
+  - job: TaskIDExtraction
+    displayName: 'Extract TaskID'
     steps:
-    - script: |
-        echo Package Name: $(packageName)
-        echo Build ID: $(Build.BuildId)
-        echo Repository: $(Build.Repository.Name)
-      displayName: 'Display Build Information'
-    
     - powershell: |
         # Extract TaskID from commit message
         $commitMessage = "$(Build.SourceVersionMessage)"
@@ -45,23 +39,39 @@ stages:
         if ($commitMessage -match 'TaskID:\s*([A-Za-z0-9_-]+)') {
           $taskId = $matches[1]
           Write-Host "Extracted TaskID: $taskId"
-          Write-Output "##vso[task.setvariable variable=packageName isOutput=true]$taskId"
+          Write-Output "##vso[task.setvariable variable=EXTRACTED_PACKAGE_NAME isOutput=true]$taskId"
         } else {
           Write-Error "TaskID not found in commit message. Commit message must contain 'TaskID: <value>'"
           exit 1
         }
       displayName: 'Extract TaskID from Commit Message'
       name: ExtractTaskId
+
+- stage: CreatePackage
+  displayName: 'Create DBmaestro Package'
+  dependsOn: ExtractTaskID
+  condition: succeeded()
+  variables:
+    EXTRACTED_PACKAGE_NAME: $[ stageDependencies.ExtractTaskID.TaskIDExtraction.outputs['ExtractTaskId.EXTRACTED_PACKAGE_NAME'] ]
+  jobs:
+  - job: PackageCreation
+    displayName: 'Create Package'
+    steps:
+    - script: |
+        echo Package Name: $(EXTRACTED_PACKAGE_NAME)
+        echo Build ID: $(Build.BuildId)
+        echo Repository: $(Build.Repository.Name)
+      displayName: 'Display Build Information'
     
     - powershell: |
         java -jar "$(DBM_JAR_PATH)" -Build `
           -ProjectName "$(DBM_PROJECT_NAME)" `
           -EnvName "$(DBM_ENV_NAME_DEV)" `
           -VersionType "Tasks" `
-          -AdditionalInformation "$(packageName)" `
+          -AdditionalInformation "$(EXTRACTED_PACKAGE_NAME)" `
           -CreatePackage True `
-          -CreateDowngradeScripts  True `
-          -PackageName "$(packageName)" `
+          -CreateDowngradeScripts True `
+          -PackageName "$(EXTRACTED_PACKAGE_NAME)" `
           -Server "$(DBM_AGENT_ENDPOINT)" `
           -UseSSL True `
           -AuthType "$(DBM_AUTH_TYPE)" `
@@ -71,10 +81,10 @@ stages:
 
 - stage: RunPrecheck
   displayName: 'Run DBmaestro Precheck'
-  dependsOn: CreatePackage
+  dependsOn: ExtractTaskID
   condition: succeeded()
   variables:
-    packageName: $[ stageDependencies.CreatePackage.PackageCreation.outputs['ExtractTaskId.packageName'] ]
+    EXTRACTED_PACKAGE_NAME: $[ stageDependencies.ExtractTaskID.TaskIDExtraction.outputs['ExtractTaskId.EXTRACTED_PACKAGE_NAME'] ]
   jobs:
   - job: PrecheckValidation
     displayName: 'Validate Package'
@@ -83,7 +93,7 @@ stages:
         java -jar "$(DBM_JAR_PATH)" -PreCheck `
           -ProjectName "$(DBM_PROJECT_NAME)" `
           -Server "$(DBM_AGENT_ENDPOINT)" `
-          -PackageName "$(packageName)" `
+          -PackageName "$(EXTRACTED_PACKAGE_NAME)" `
           -UseSSL True `
           -AuthType "$(DBM_AUTH_TYPE)" `
           -UserName "$(DBMUsername)" `
@@ -92,10 +102,10 @@ stages:
 
 - stage: UpgradeReleaseSource
   displayName: 'Upgrade Release Source Environment'
-  dependsOn: RunPrecheck
+  dependsOn: ExtractTaskID
   condition: succeeded()
   variables:
-    packageName: $[ stageDependencies.CreatePackage.PackageCreation.outputs['ExtractTaskId.packageName'] ]
+    EXTRACTED_PACKAGE_NAME: $[ stageDependencies.ExtractTaskID.TaskIDExtraction.outputs['ExtractTaskId.EXTRACTED_PACKAGE_NAME'] ]
   jobs:
   - job: DeployToReleaseSource
     displayName: 'Deploy Package to Release Source'
@@ -104,7 +114,7 @@ stages:
         java -jar "$(DBM_JAR_PATH)" -Upgrade `
           -ProjectName "$(DBM_PROJECT_NAME)" `
           -EnvName "$(DBM_ENV_NAME_RS)" `
-          -PackageName "$(packageName)" `
+          -PackageName "$(EXTRACTED_PACKAGE_NAME)" `
           -BackupBehavior True `
           -RestoreBehavior True `
           -Server "$(DBM_AGENT_ENDPOINT)" `
@@ -116,7 +126,7 @@ stages:
     
     - script: |
         echo Deployment Summary:
-        echo Package: $(packageName)
+        echo Package: $(EXTRACTED_PACKAGE_NAME)
         echo Environment: $(DBM_ENV_NAME_RS)
         echo Status: SUCCESS
       displayName: 'Display Deployment Summary'
