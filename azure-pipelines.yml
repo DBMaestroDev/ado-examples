@@ -40,24 +40,39 @@ stages:
           $taskId = $matches[1]
           Write-Host "Extracted TaskID: $taskId"
           Write-Output "##vso[task.setvariable variable=EXTRACTED_PACKAGE_NAME isOutput=true]$taskId"
+          # Also write to a file for other stages to read
+          $taskId | Out-File -FilePath "$(Build.ArtifactStagingDirectory)/taskid.txt" -NoNewline -Force
         } else {
           Write-Error "TaskID not found in commit message. Commit message must contain 'TaskID: <value>'"
           exit 1
         }
       displayName: 'Extract TaskID from Commit Message'
       name: ExtractTaskId
+    
+    - publish: $(Build.ArtifactStagingDirectory)/taskid.txt
+      artifact: taskid-artifact
+      displayName: 'Publish TaskID Artifact'
 
 - stage: CreatePackage
   displayName: 'Create DBmaestro Package'
   dependsOn:
   - ExtractTaskID
   condition: succeeded()
-  variables:
-    EXTRACTED_PACKAGE_NAME: $[ stageDependencies.ExtractTaskID.TaskIDExtraction.outputs['ExtractTaskId.EXTRACTED_PACKAGE_NAME'] ]
   jobs:
   - job: PackageCreation
     displayName: 'Create Package'
     steps:
+    - download: current
+      artifact: taskid-artifact
+      displayName: 'Download TaskID Artifact'
+    
+    - powershell: |
+        $taskIdContent = Get-Content "$(Pipeline.Workspace)/taskid-artifact/taskid.txt" -Raw
+        $taskId = $taskIdContent.Trim()
+        Write-Host "Read TaskID from artifact: $taskId"
+        Write-Output "##vso[task.setvariable variable=EXTRACTED_PACKAGE_NAME]$taskId"
+      displayName: 'Load TaskID from Artifact'
+    
     - script: |
         echo Package Name: $(EXTRACTED_PACKAGE_NAME)
         echo Build ID: $(Build.BuildId)
@@ -93,12 +108,21 @@ stages:
   dependsOn:
   - CreatePackage
   condition: succeeded()
-  variables:
-    EXTRACTED_PACKAGE_NAME: $[ stageDependencies.ExtractTaskID.TaskIDExtraction.outputs['ExtractTaskId.EXTRACTED_PACKAGE_NAME'] ]
   jobs:
   - job: PrecheckValidation
     displayName: 'Validate Package'
     steps:
+    - download: current
+      artifact: taskid-artifact
+      displayName: 'Download TaskID Artifact'
+    
+    - powershell: |
+        $taskIdContent = Get-Content "$(Pipeline.Workspace)/taskid-artifact/taskid.txt" -Raw
+        $taskId = $taskIdContent.Trim()
+        Write-Host "Read TaskID from artifact: $taskId"
+        Write-Output "##vso[task.setvariable variable=EXTRACTED_PACKAGE_NAME]$taskId"
+      displayName: 'Load TaskID from Artifact'
+    
     - powershell: |
         java -jar "$(DBM_JAR_PATH)" -PreCheck `
           -ProjectName "$(DBM_PROJECT_NAME)" `
@@ -115,12 +139,21 @@ stages:
   dependsOn:
   - RunPrecheck
   condition: succeeded()
-  variables:
-    EXTRACTED_PACKAGE_NAME: $[ stageDependencies.ExtractTaskID.TaskIDExtraction.outputs['ExtractTaskId.EXTRACTED_PACKAGE_NAME'] ]
   jobs:
   - job: DeployToReleaseSource
     displayName: 'Deploy Package to Release Source'
     steps:
+    - download: current
+      artifact: taskid-artifact
+      displayName: 'Download TaskID Artifact'
+    
+    - powershell: |
+        $taskIdContent = Get-Content "$(Pipeline.Workspace)/taskid-artifact/taskid.txt" -Raw
+        $taskId = $taskIdContent.Trim()
+        Write-Host "Read TaskID from artifact: $taskId"
+        Write-Output "##vso[task.setvariable variable=EXTRACTED_PACKAGE_NAME]$taskId"
+      displayName: 'Load TaskID from Artifact'
+    
     - powershell: |
         java -jar "$(DBM_JAR_PATH)" -Upgrade `
           -ProjectName "$(DBM_PROJECT_NAME)" `
