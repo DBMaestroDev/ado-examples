@@ -47,8 +47,8 @@ stages:
           Write-Host "Extracted TaskID: $taskId"
           Write-Output "##vso[task.setvariable variable=packageName isOutput=true]$taskId"
         } else {
-          Write-Host "No TaskID found in commit message, using default: $(packageName)"
-          Write-Output "##vso[task.setvariable variable=packageName isOutput=true]$(packageName)"
+          Write-Error "TaskID not found in commit message. Commit message must contain 'TaskID: <value>'"
+          exit 1
         }
       displayName: 'Extract TaskID from Commit Message'
       name: ExtractTaskId
