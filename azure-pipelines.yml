@@ -45,11 +45,13 @@ stages:
         if ($commitMessage -match 'TaskID:\s*([A-Za-z0-9_-]+)') {
           $taskId = $matches[1]
           Write-Host "Extracted TaskID: $taskId"
-          Write-Output "##vso[task.setvariable variable=packageName]$taskId"
+          Write-Output "##vso[task.setvariable variable=packageName isOutput=true]$taskId"
         } else {
           Write-Host "No TaskID found in commit message, using default: $(packageName)"
+          Write-Output "##vso[task.setvariable variable=packageName isOutput=true]$(packageName)"
         }
       displayName: 'Extract TaskID from Commit Message'
+      name: ExtractTaskId
     
     - powershell: |
         java -jar "$(DBM_JAR_PATH)" -Build `
@@ -58,6 +60,7 @@ stages:
           -VersionType "Tasks" `
           -AdditionalInformation "$(packageName)" `
           -CreatePackage True `
+          -CreateDowngradeScripts  True `
           -PackageName "$(packageName)" `
           -Server "$(DBM_AGENT_ENDPOINT)" `
           -UseSSL True `
@@ -70,6 +73,8 @@ stages:
   displayName: 'Run DBmaestro Precheck'
   dependsOn: CreatePackage
   condition: succeeded()
+  variables:
+    packageName: $[ stageDependencies.CreatePackage.PackageCreation.outputs['ExtractTaskId.packageName'] ]
   jobs:
   - job: PrecheckValidation
     displayName: 'Validate Package'
@@ -89,6 +94,8 @@ stages:
   displayName: 'Upgrade Release Source Environment'
   dependsOn: RunPrecheck
   condition: succeeded()
+  variables:
+    packageName: $[ stageDependencies.CreatePackage.PackageCreation.outputs['ExtractTaskId.packageName'] ]
   jobs:
   - job: DeployToReleaseSource
     displayName: 'Deploy Package to Release Source'
