@@ -46,7 +46,7 @@ stages:
         $commitMessage = "$(Build.SourceVersionMessage)"
         Write-Host "Commit Message: $commitMessage"
         
-        if ($commitMessage -match 'TaskID:\s*([A-Za-z0-9]+)') {
+        if ($commitMessage -match 'TaskID:\s*([A-Za-z0-9_-]+)') {
           $taskId = $matches[1]
           Write-Host "Extracted TaskID: $taskId"
           Write-Output "##vso[task.setvariable variable=packageName]$taskId"
