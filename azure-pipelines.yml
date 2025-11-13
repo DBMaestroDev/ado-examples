@@ -1,14 +1,19 @@
 trigger:
-  repositories:
-  - ado-source-control
   branches:
     include:
     - main
     - develop
-  paths:
-    include:
-    - '**'
 
+resources:
+  repositories:
+    - repository: ado-source-control
+      type: git
+      name: 'ado-source-control'  # Format: 'ProjectName/RepoName'
+      trigger:
+        branches:
+          include:
+          - main
+          - develop
 pool:
   name: NicolasHosted
 
