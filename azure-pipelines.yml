@@ -1,0 +1,133 @@
+trigger: none
+
+resources:
+  repositories:
+  - repository: SourceControlRepo
+    type: azure
+    name: poc/ado-source-control
+    trigger:
+      branches:
+        include:
+        - main
+        - develop
+      paths:
+        include:
+        - '**'
+
+pool:
+  name: NicolasHosted
+
+variables:
+  dbmaestroVersion: '2024.1.0'
+  packageName: '$(Build.Repository.Name)-$(Build.BuildNumber)'
+  releaseSourceEnvironment: 'release-source'
+  DBM_JAR_PATH: 'C:\Program Files (x86)\DBmaestro\DOP Server\Agent\DBmaestroAgent.jar'
+  DBM_AGENT_ENDPOINT: 'localhost:8017'
+  DBM_ENV_NAME_DEV: 'Dev_Env_1'
+  DBM_ENV_NAME_RS: 'Release Source'
+  DBM_PROJECT_NAME: 'Demo-MSSQL'
+  DBM_AUTH_TYPE: 'DBmaestroAccount'
+
+stages:
+- stage: CreatePackage
+  displayName: 'Create DBmaestro Package'
+  jobs:
+  - job: PackageCreation
+    displayName: 'Create Package'
+    steps:
+    - script: |
+        echo Package Name: $(packageName)
+        echo Build ID: $(Build.BuildId)
+        echo Repository: $(Build.Repository.Name)
+      displayName: 'Display Build Information'
+    
+    - powershell: |
+        # Extract TaskID from commit message
+        $commitMessage = "$(Build.SourceVersionMessage)"
+        Write-Host "Commit Message: $commitMessage"
+        
+        if ($commitMessage -match 'TaskID:\s*([A-Za-z0-9]+)') {
+          $taskId = $matches[1]
+          Write-Host "Extracted TaskID: $taskId"
+          Write-Output "##vso[task.setvariable variable=packageName]$taskId"
+        } else {
+          Write-Host "No TaskID found in commit message, using default: $(packageName)"
+        }
+      displayName: 'Extract TaskID from Commit Message'
+    
+    - powershell: |
+        java -jar "$(DBM_JAR_PATH)" -Build `
+          -ProjectName "$(DBM_PROJECT_NAME)" `
+          -EnvName "$(DBM_ENV_NAME_DEV)" `
+          -VersionType "Tasks" `
+          -AdditionalInformation "$(Build.BuildId)" `
+          -CreatePackage True `
+          -PackageName "$(packageName)" `
+          -Server "$(DBM_AGENT_ENDPOINT)" `
+          -UseSSL True `
+          -AuthType "$(DBM_AUTH_TYPE)" `
+          -UserName "$(DBMUsername)" `
+          -Password "$(DBMPassword)"
+      displayName: 'Create DBmaestro Package'
+
+- stage: RunPrecheck
+  displayName: 'Run DBmaestro Precheck'
+  dependsOn: CreatePackage
+  condition: succeeded()
+  jobs:
+  - job: PrecheckValidation
+    displayName: 'Validate Package'
+    steps:
+    - powershell: |
+        java -jar "$(DBM_JAR_PATH)" -PreCheck `
+          -ProjectName "$(DBM_PROJECT_NAME)" `
+          -Server "$(DBM_AGENT_ENDPOINT)" `
+          -PackageName "$(packageName)" `
+          -UseSSL True `
+          -AuthType "$(DBM_AUTH_TYPE)" `
+          -UserName "$(DBMUsername)" `
+          -Password "$(DBMPassword)"
+      displayName: 'Run DBmaestro Precheck'
+
+- stage: UpgradeReleaseSource
+  displayName: 'Upgrade Release Source Environment'
+  dependsOn: RunPrecheck
+  condition: succeeded()
+  jobs:
+  - job: DeployToReleaseSource
+    displayName: 'Deploy Package to Release Source'
+    steps:
+    - powershell: |
+        java -jar "$(DBM_JAR_PATH)" -Upgrade `
+          -ProjectName "$(DBM_PROJECT_NAME)" `
+          -EnvName "$(DBM_ENV_NAME_RS)" `
+          -PackageName "$(packageName)" `
+          -BackupBehavior True `
+          -RestoreBehavior True `
+          -Server "$(DBM_AGENT_ENDPOINT)" `
+          -UseSSL True `
+          -AuthType "$(DBM_AUTH_TYPE)" `
+          -UserName "$(DBMUsername)" `
+          -Password "$(DBMPassword)"
+      displayName: 'Upgrade Release Source Environment'
+    
+    - script: |
+        echo Deployment Summary:
+        echo Package: $(packageName)
+        echo Environment: $(DBM_ENV_NAME_RS)
+        echo Status: SUCCESS
+      displayName: 'Display Deployment Summary'
+
+- stage: Notification
+  displayName: 'Pipeline Notification'
+  dependsOn: UpgradeReleaseSource
+  condition: always()
+  jobs:
+  - job: NotifyCompletion
+    displayName: 'Notify Pipeline Status'
+    steps:
+    - script: |
+        echo Pipeline execution completed
+        echo Build ID: $(Build.BuildId)
+        echo Status: $(Agent.JobStatus)
+      displayName: 'Pipeline Completion Notification'
