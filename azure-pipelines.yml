@@ -56,7 +56,7 @@ stages:
           -ProjectName "$(DBM_PROJECT_NAME)" `
           -EnvName "$(DBM_ENV_NAME_DEV)" `
           -VersionType "Tasks" `
-          -AdditionalInformation "$(Build.BuildId)" `
+          -AdditionalInformation "$(packageName)" `
           -CreatePackage True `
           -PackageName "$(packageName)" `
           -Server "$(DBM_AGENT_ENDPOINT)" `
