@@ -94,14 +94,16 @@ stages:
           -VersionType "Tasks" `
           -AdditionalInformation "$(EXTRACTED_PACKAGE_NAME)" `
           -CreatePackage True `
-          -CreateDowngradeScripts True `
           -PackageName "$(EXTRACTED_PACKAGE_NAME)" `
           -Server "$(DBM_AGENT_ENDPOINT)" `
           -UseSSL True `
           -AuthType "$(DBM_AUTH_TYPE)" `
           -UserName "$(DBMUsername)" `
           -Password "$(DBMPassword)"
+
       displayName: 'Create DBmaestro Package'
+# -CreateDowngradeScripts True `
+# we need to add this later
 
 - stage: RunPrecheck
   displayName: 'Run DBmaestro Precheck'
