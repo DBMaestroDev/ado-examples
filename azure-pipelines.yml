@@ -144,14 +144,14 @@ stages:
           -Password "$(DBMPassword)"
       displayName: 'Run DBmaestro Precheck'
 
-- stage: UpgradeDEV
-  displayName: 'Upgrade DEV Environment'
+- stage: UpgradeINTEGRACION
+  displayName: 'Upgrade INTEGRACION Environment'
   dependsOn:
   - RunPrecheck
   condition: succeeded()
   jobs:
-  - job: DeployToDEV
-    displayName: 'Deploy Package to DEV'
+  - job: DeployToINTEGRACION
+    displayName: 'Deploy Package to INTEGRACION'
     steps:
     - download: current
       artifact: taskid-artifact
@@ -175,7 +175,7 @@ stages:
           -AuthType "$(DBM_AUTH_TYPE)" `
           -UserName "$(DBMUsername)" `
           -Password "$(DBMPassword)"
-      displayName: 'Upgrade DEV Environment'
+      displayName: 'Upgrade INTEGRACION Environment'
     
     - script: |
         echo Deployment Summary:
@@ -187,7 +187,7 @@ stages:
 - stage: ApprovalForQAS
   displayName: 'Approval: Proceed to QAS'
   dependsOn:
-  - UpgradeDEV
+  - UpgradeINTEGRACION
   condition: succeeded()
   jobs:
   - job: ApprovalJob
@@ -198,7 +198,7 @@ stages:
     - task: ManualValidation@0
       inputs:
         notifyUsers: 'nicolast@dbmaestro.com'
-        instructions: 'Please review the DEV deployment and approve to proceed with QAS upgrade.'
+        instructions: 'Please review the INTEGRACION deployment and approve to proceed with QAS upgrade.'
         onTimeout: 'reject'
 
 - stage: UpgradeQAS
@@ -252,11 +252,53 @@ stages:
     pool: server
     timeoutInMinutes: 1440
     steps:
+    - powershell: |
+        $currentValue = "$(TargetDeploymentDate)"
+        if ([string]::IsNullOrWhiteSpace($currentValue)) {
+          $currentValue = "NOT SET"
+        }
+        Write-Host ""
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host "Current TargetDeploymentDate Value:" -ForegroundColor Yellow
+        Write-Host "$currentValue" -ForegroundColor Green
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host ""
+      displayName: 'Display Current Deployment Date Value'
+    
     - task: ManualValidation@0
       inputs:
         notifyUsers: 'nicolast@dbmaestro.com'
-        instructions: 'QAS deployment completed successfully. Please review and specify the production deployment schedule. To set a custom date, add variable "TargetDeploymentDate" with format: "2025-11-17 14:30:00" (YYYY-MM-DD HH:MM:SS). Default if not specified: 5 minutes from approval.'
+        instructions: 'QAS deployment completed successfully. Please review and approve to proceed with production deployment scheduling.'
         onTimeout: 'reject'
+    
+    - powershell: |
+        Write-Host ""
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host "Production Deployment Date Prompt" -ForegroundColor Yellow
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "Enter the desired production deployment date and time."
+        Write-Host "Format: YYYY-MM-DD HH:MM:SS (e.g., 2025-11-17 14:30:00)"
+        Write-Host ""
+        
+        $deploymentDate = Read-Host "Enter deployment date"
+        
+        if ([string]::IsNullOrWhiteSpace($deploymentDate)) {
+          Write-Host "No date provided. Using existing TargetDeploymentDate value or default." -ForegroundColor Yellow
+        } else {
+          # Validate date format
+          try {
+            $parsedDate = [DateTime]::Parse($deploymentDate)
+            Write-Host "Date accepted: $parsedDate" -ForegroundColor Green
+            Write-Output "##vso[task.setvariable variable=TargetDeploymentDate]$deploymentDate"
+            Write-Output "##vso[task.setvariable variable=DEPLOYMENT_DATE_PROVIDED]true"
+          } catch {
+            Write-Host "Invalid date format. Please use YYYY-MM-DD HH:MM:SS format." -ForegroundColor Red
+            Write-Error "Failed to parse date: $deploymentDate"
+            exit 1
+          }
+        }
+      displayName: 'Prompt for Production Deployment Date'
   
   - job: ScheduleUpgrade
     displayName: 'Schedule Production Upgrade'
