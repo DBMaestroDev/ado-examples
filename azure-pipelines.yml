@@ -375,7 +375,7 @@ stages:
     - powershell: |
         # Wait for Azure DevOps to detect the new file
         Write-Host "Waiting for Azure DevOps to index the new pipeline file..."
-        Start-Sleep -Seconds 30
+        Start-Sleep -Seconds 10
         
         # Verify git commit was successful
         if ("$(GIT_COMMIT_SUCCESS)" -ne "true") {
@@ -399,7 +399,7 @@ stages:
             type = "yaml"
             path = "/$(PIPELINE_FILE_NAME)"
             repository = @{
-              id = "$(Build.Repository.ID)"
+              id = "083d87c7-95c7-416c-961e-2914ff5c3e43"
               type = "azureReposGit"
             }
           }
