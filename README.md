@@ -113,6 +113,40 @@ Without this setting, dynamically created scheduled pipelines will fail with a p
 - **Reusability**: Automatically available to all pipelines that reference the group
 - **Dynamic Pipelines**: Scheduled production pipelines inherit credentials from the group without manual setup
 
+### Agent Pool Access (Required for Scheduled Pipelines)
+
+The dynamically created production deployment scheduled pipelines require permission to access the agent pool.
+
+#### Configuring Agent Pool Permissions
+
+**Option 1: Authorize Individual Pipelines (Recommended for security)**
+
+1. In Azure DevOps, go to **Project Settings** → **Agent pools** (under Pipelines section)
+2. Click on **NicolasHosted** pool
+3. Click the **Security** tab
+4. Click the **+** button to add a new pipeline
+5. Search for and select the **newly created production deployment pipeline** (e.g., "Deploy-PRD-ISSUE-93")
+6. Click **Save**
+
+This grants permission to that specific pipeline to use the agent pool.
+
+**Option 2: Allow All Pipelines (Easier for less restricted projects)**
+
+If you have project-level permissions:
+
+1. In Azure DevOps, go to **Project Settings** → **Agent pools** (under Pipelines section)
+2. Click on **NicolasHosted** pool
+3. Click the **Security** tab
+4. Look for a **"Make open"** or **"Allow all pipelines"** option (depending on your Azure DevOps version)
+5. Enable it to allow all pipelines in the project to use this agent pool
+
+This eliminates the need to authorize each new production deployment pipeline individually.
+
+**Without agent pool access**, newly created production deployment pipelines will fail with error:
+```
+This pipeline needs permission to access a resource before this run can continue to Deploy to Production
+```
+
 ### Pipeline Variables
 
 #### From Variable Group (Secure)
