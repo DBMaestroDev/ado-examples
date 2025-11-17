@@ -389,7 +389,7 @@ stages:
         $pat = "$(System.AccessToken)"
         
         $headers = @{
-          Authorization = "Bearer $pat"
+          Authorization = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":$pat"))
           "Content-Type" = "application/json"
         }
         

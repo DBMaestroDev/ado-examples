@@ -6,7 +6,7 @@ $orgUrl = if ($env:ADO_ORG_URL) { $env:ADO_ORG_URL } else { "https://dev.azure.c
 $project = if ($env:ADO_PROJECT) { $env:ADO_PROJECT } else { "poc" }
 $pat = $env:ADO_PAT
 $repoId = $env:ADO_REPO_ID
-$yamlPath = if ($env:ADO_YAML_PATH) { $env:ADO_YAML_PATH } else { "/deploy-prd-ISSUE-77.yml" }
+$yamlPath = if ($env:ADO_YAML_PATH) { $env:ADO_YAML_PATH } else { "/deploy-prd-ISSUE-79.yml" }
 
 # Validate required parameters
 if (-not $pat) {
@@ -33,7 +33,7 @@ $headers = @{
 }
 
 # Create request body
-$pipelineName = "Deploy-PRD-ISSUE-77-TEST"
+$pipelineName = "Deploy-PRD-ISSUE-79-TEST"
 $body = @{
   configuration = @{
     type = "yaml"
@@ -44,7 +44,6 @@ $body = @{
     }
   }
   folder = "Production Deployments"
-  name = $pipelineName
 } | ConvertTo-Json -Depth 10
 
 Write-Host "=== Azure DevOps Pipeline API Test ===" -ForegroundColor Cyan
