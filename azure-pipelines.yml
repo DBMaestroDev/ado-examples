@@ -255,55 +255,77 @@ stages:
     - task: ManualValidation@0
       inputs:
         notifyUsers: 'nicolast@dbmaestro.com'
-        instructions: 'QAS deployment completed successfully. Please review and approve to proceed with production deployment scheduling.'
+        instructions: 'QAS deployment completed successfully. Please review and approve to proceed with production deployment scheduling. Optional: In the approval comments, enter deployment date in format: YYYY-MM-DD HH:MM:SS (e.g., 2025-11-18 14:30:00). Leave blank to use default (5 minutes from execution).'
         onTimeout: 'reject'
   
   - job: SetDeploymentTime
     displayName: 'Set Production Deployment Time'
     dependsOn: ApprovalForDeployment
-    timeoutInMinutes: 1440
+    timeoutInMinutes: 10
     steps:
     - powershell: |
-        $currentValue = "$(TargetDeploymentDate)"
-        if ([string]::IsNullOrWhiteSpace($currentValue)) {
-          $currentValue = "NOT SET"
+        # Get approval details from Azure DevOps REST API
+        $orgUrl = "$(System.CollectionUri)"
+        $project = "$(System.TeamProject)"
+        $buildId = "$(Build.BuildId)"
+        $pat = "$(ADO_PAT)"
+        
+        if ([string]::IsNullOrWhiteSpace($pat)) {
+          Write-Host "Warning: ADO_PAT not set. Cannot retrieve approval comments." -ForegroundColor Yellow
+          Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]false"
+          exit 0
         }
-        Write-Host ""
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "Current TargetDeploymentDate Value:" -ForegroundColor Yellow
-        Write-Host "$currentValue" -ForegroundColor Green
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host ""
-      displayName: 'Display Current Deployment Date Value'
-    
-    - powershell: |
-        Write-Host ""
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "Production Deployment Date Prompt" -ForegroundColor Yellow
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host ""
-        Write-Host "Enter the desired production deployment date and time."
-        Write-Host "Format: YYYY-MM-DD HH:MM:SS (e.g., 2025-11-17 14:30:00)"
-        Write-Host ""
         
-        $deploymentDate = Read-Host "Enter deployment date"
+        $headers = @{
+          Authorization = "Bearer $pat"
+          "Content-Type" = "application/json"
+        }
         
-        if ([string]::IsNullOrWhiteSpace($deploymentDate)) {
-          Write-Host "No date provided. Using existing TargetDeploymentDate value or default." -ForegroundColor Yellow
-        } else {
-          # Validate date format
-          try {
-            $parsedDate = [DateTime]::Parse($deploymentDate)
-            Write-Host "Date accepted: $parsedDate" -ForegroundColor Green
-            Write-Output "##vso[task.setvariable variable=TargetDeploymentDate]$deploymentDate"
-            Write-Output "##vso[task.setvariable variable=DEPLOYMENT_DATE_PROVIDED]true"
-          } catch {
-            Write-Host "Invalid date format. Please use YYYY-MM-DD HH:MM:SS format." -ForegroundColor Red
-            Write-Error "Failed to parse date: $deploymentDate"
-            exit 1
+        try {
+          # Get timeline records to find the ManualValidation approval step
+          $uri = "$orgUrl$project/_apis/build/builds/$buildId/timeline?api-version=6.0"
+          Write-Host "Querying build timeline: $uri"
+          $response = Invoke-RestMethod -Uri $uri -Method Get -Headers $headers
+          
+          # Find the approval record and extract comments
+          $approvalRecord = $response.records | Where-Object { $_.type -eq "Task" -and $_.name -like "*Approval*" -and $_.result -eq "succeeded" } | Select-Object -First 1
+          
+          if ($approvalRecord) {
+            $approvalTime = $approvalRecord.finishTime
+            Write-Host "Found approval completed at: $approvalTime"
+            
+            # Get the log for the approval step to extract comments
+            $logUrl = "$orgUrl$project/_apis/build/builds/$buildId/logs/$($approvalRecord.logId)?api-version=6.0"
+            Write-Host "Retrieving approval log: $logUrl"
+            $logContent = Invoke-RestMethod -Uri $logUrl -Method Get -Headers $headers
+            
+            # Try to extract date from log content (comments may be in the log)
+            $datePattern = '\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}'
+            if ($logContent -match $datePattern) {
+              $extractedDate = $matches[0]
+              Write-Host "Extracted date from approval comments: $extractedDate" -ForegroundColor Green
+              
+              try {
+                $parsedDate = [DateTime]::Parse($extractedDate)
+                Write-Output "##vso[task.setvariable variable=TargetDeploymentDate]$extractedDate"
+                Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]true"
+              } catch {
+                Write-Host "Warning: Could not parse extracted date. Using default." -ForegroundColor Yellow
+                Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]false"
+              }
+            } else {
+              Write-Host "No date found in approval comments. Will use default or existing TargetDeploymentDate." -ForegroundColor Cyan
+              Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]false"
+            }
+          } else {
+            Write-Host "Approval record not found in timeline." -ForegroundColor Yellow
+            Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]false"
           }
+        } catch {
+          Write-Host "Warning: Could not retrieve approval details: $($_.Exception.Message)" -ForegroundColor Yellow
+          Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]false"
         }
-      displayName: 'Prompt for Production Deployment Date'
+      displayName: 'Extract Deployment Date from Approval Comments'
   
   - job: ScheduleUpgrade
     displayName: 'Schedule Production Upgrade'
