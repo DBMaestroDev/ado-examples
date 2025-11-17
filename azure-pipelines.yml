@@ -368,17 +368,29 @@ stages:
         SYSTEM_ACCESSTOKEN: $(System.AccessToken)
     
     - powershell: |
-        # Get the current repository ID from git remote URL
-        cd "$(Build.SourcesDirectory)"
-        $remoteUrl = git config --get remote.origin.url
-        Write-Host "Git remote URL: $remoteUrl"
+        # Get the repository ID via REST API using the repository name
+        $orgUrl = "$(System.CollectionUri)"
+        $project = "$(System.TeamProject)"
+        $repoName = "ado-examples"
+        $pat = "$(ADO_PAT)"
         
-        # Extract repo ID from URL (format: https://dev.azure.com/org/project/_git/repoId)
-        # The last part after _git/ is the repo name, we need to get its ID
-        # For now, we'll query via git to get the repository ID
-        $repoName = Split-Path -Leaf $remoteUrl
-        Write-Output "##vso[task.setvariable variable=CURRENT_REPO_ID]$repoName"
-        Write-Host "Repository name: $repoName"
+        $headers = @{
+          Authorization = "Bearer $pat"
+          "Content-Type" = "application/json"
+        }
+        
+        try {
+          $uri = "$orgUrl$project/_apis/git/repositories/$repoName`?api-version=7.0"
+          Write-Host "Querying repository: $uri"
+          $response = Invoke-RestMethod -Uri $uri -Method Get -Headers $headers
+          $repoId = $response.id
+          
+          Write-Host "Repository ID for '$repoName': $repoId"
+          Write-Output "##vso[task.setvariable variable=CURRENT_REPO_ID]$repoId"
+        } catch {
+          Write-Error "Failed to get repository ID: $($_.Exception.Message)"
+          exit 1
+        }
       displayName: 'Get Current Repository ID'
     
     - powershell: |
