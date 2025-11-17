@@ -6,7 +6,7 @@ $orgUrl = if ($env:ADO_ORG_URL) { $env:ADO_ORG_URL } else { "https://dev.azure.c
 $project = if ($env:ADO_PROJECT) { $env:ADO_PROJECT } else { "poc" }
 $pat = $env:ADO_PAT
 $repoId = $env:ADO_REPO_ID
-$yamlPath = if ($env:ADO_YAML_PATH) { $env:ADO_YAML_PATH } else { "/deploy-prd-ISSUE-79.yml" }
+$yamlPath = if ($env:ADO_YAML_PATH) { $env:ADO_YAML_PATH } else { "/deploy-prd-ISSUE-80.yml" }
 
 # Validate required parameters
 if (-not $pat) {
@@ -28,12 +28,12 @@ if (-not $repoId) {
 
 # Create authentication header
 $headers = @{
-  Authorization = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":$pat"))
+  Authorization = "Bearer $pat"
   "Content-Type" = "application/json"
 }
 
 # Create request body
-$pipelineName = "Deploy-PRD-ISSUE-79-TEST"
+$pipelineName = "Deploy-PRD-ISSUE-80-TEST"
 $body = @{
   configuration = @{
     type = "yaml"
