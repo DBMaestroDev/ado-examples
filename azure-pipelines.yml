@@ -65,13 +65,14 @@ stages:
       artifact: taskid-artifact
       displayName: 'Publish TaskID Artifact'
 
-- stage: CreatePackage
-  displayName: 'Create DBmaestro Package'
-  dependsOn:
-  - ExtractTaskID
-  condition: succeeded()
-  jobs:
-  - job: PackageCreation
+# DISABLED FOR TESTING
+# - stage: CreatePackage
+#   displayName: 'Create DBmaestro Package'
+#   dependsOn:
+#   - ExtractTaskID
+#   condition: succeeded()
+#   jobs:
+#   - job: PackageCreation
     displayName: 'Create Package'
     steps:
     - download: current
@@ -117,13 +118,14 @@ stages:
 # -CreateDowngradeScripts True `
 # we need to add this later
 
-- stage: RunPrecheck
-  displayName: 'Run DBmaestro Precheck'
-  dependsOn:
-  - CreatePackage
-  condition: succeeded()
-  jobs:
-  - job: PrecheckValidation
+# DISABLED FOR TESTING
+# - stage: RunPrecheck
+#   displayName: 'Run DBmaestro Precheck'
+#   dependsOn:
+#   - CreatePackage
+#   condition: succeeded()
+#   jobs:
+#   - job: PrecheckValidation
     displayName: 'Validate Package'
     steps:
     - download: current
@@ -148,13 +150,14 @@ stages:
           -Password "$(DBMPassword)"
       displayName: 'Run DBmaestro Precheck'
 
-- stage: UpgradeDEV
-  displayName: 'Upgrade DEV Environment'
-  dependsOn:
-  - RunPrecheck
-  condition: succeeded()
-  jobs:
-  - job: DeployToDEV
+# DISABLED FOR TESTING
+# - stage: UpgradeDEV
+#   displayName: 'Upgrade DEV Environment'
+#   dependsOn:
+#   - RunPrecheck
+#   condition: succeeded()
+#   jobs:
+#   - job: DeployToDEV
     displayName: 'Deploy Package to DEV'
     steps:
     - download: current
@@ -189,13 +192,14 @@ stages:
         echo Status: SUCCESS
       displayName: 'Display Deployment Summary'
 
-- stage: ApprovalForQAS
-  displayName: 'Approval: Proceed to QAS'
-  dependsOn:
-  - UpgradeDEV
-  condition: succeeded()
-  jobs:
-  - job: ApprovalJob
+# DISABLED FOR TESTING
+# - stage: ApprovalForQAS
+#   displayName: 'Approval: Proceed to QAS'
+#   dependsOn:
+#   - UpgradeDEV
+#   condition: succeeded()
+#   jobs:
+#   - job: ApprovalJob
     displayName: 'Manual Approval'
     pool: server
     timeoutInMinutes: 1440
@@ -206,13 +210,14 @@ stages:
         instructions: 'Please review the DEV deployment and approve to proceed with QAS upgrade.'
         onTimeout: 'reject'
 
-- stage: UpgradeQAS
-  displayName: 'Upgrade QAS Environment'
-  dependsOn:
-  - ApprovalForQAS
-  condition: succeeded()
-  jobs:
-  - job: DeployToQAS
+# DISABLED FOR TESTING
+# - stage: UpgradeQAS
+#   displayName: 'Upgrade QAS Environment'
+#   dependsOn:
+#   - ApprovalForQAS
+#   condition: succeeded()
+#   jobs:
+#   - job: DeployToQAS
     displayName: 'Deploy Package to QAS'
     steps:
     - download: current
@@ -250,7 +255,7 @@ stages:
 - stage: SchedulePRDUpgrade
   displayName: 'Schedule PRD Upgrade'
   dependsOn:
-  - UpgradeQAS
+  - ExtractTaskID
   condition: succeeded()
   jobs:
   - job: SetDeploymentTime
@@ -400,7 +405,6 @@ stages:
             }
           }
           folder = "Production Deployments"
-          name = $pipelineName
         } | ConvertTo-Json -Depth 10
         
         Write-Host "Creating pipeline: $pipelineName"
