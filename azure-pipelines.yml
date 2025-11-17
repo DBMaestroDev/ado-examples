@@ -17,8 +17,6 @@ pool:
 
 variables:
   - group: DBmaestro-Credentials
-  - name: ADO_PAT
-    value: '$(System.AccessToken)'
   - name: packageName
     value: '$(Build.Repository.Name)-$(Build.BuildNumber)'
   - name: DBM_JAR_PATH
