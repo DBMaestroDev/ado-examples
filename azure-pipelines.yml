@@ -1,6 +1,6 @@
 trigger: none
 
-name: DBmaestro CI/CD Pipeline
+name: DBmaestro Pipeline
 
 resources:
   repositories:
