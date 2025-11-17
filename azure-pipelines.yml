@@ -14,15 +14,25 @@ pool:
   name: NicolasHosted
 
 variables:
-  packageName: '$(Build.Repository.Name)-$(Build.BuildNumber)'
-  DBM_JAR_PATH: 'C:\Program Files (x86)\DBmaestro\DOP Server\Agent\DBmaestroAgent.jar'
-  DBM_AGENT_ENDPOINT: 'localhost:8017'
-  DBM_ENV_NAME_DEV: 'DEV_USER'
-  DBM_ENV_NAME_RS: 'DEV'
-  DBM_ENV_NAME_QA: 'QAS'
-  DBM_ENV_NAME_PROD: 'PRD'
-  DBM_PROJECT_NAME: 'Demo-MSSQL'
-  DBM_AUTH_TYPE: 'DBmaestroAccount'
+  - group: DBmaestro-Credentials
+  - name: packageName
+    value: '$(Build.Repository.Name)-$(Build.BuildNumber)'
+  - name: DBM_JAR_PATH
+    value: 'C:\Program Files (x86)\DBmaestro\DOP Server\Agent\DBmaestroAgent.jar'
+  - name: DBM_AGENT_ENDPOINT
+    value: 'localhost:8017'
+  - name: DBM_ENV_NAME_DEV
+    value: 'DEV_USER'
+  - name: DBM_ENV_NAME_RS
+    value: 'DEV'
+  - name: DBM_ENV_NAME_QA
+    value: 'QAS'
+  - name: DBM_ENV_NAME_PROD
+    value: 'PRD'
+  - name: DBM_PROJECT_NAME
+    value: 'Demo-MSSQL'
+  - name: DBM_AUTH_TYPE
+    value: 'DBmaestroAccount'
 
 stages:
 - stage: ExtractTaskID

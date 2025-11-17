@@ -12,12 +12,19 @@ pool:
   name: NicolasHosted
 
 variables:
-  DBM_JAR_PATH: 'C:\Program Files (x86)\DBmaestro\DOP Server\Agent\DBmaestroAgent.jar'
-  DBM_AGENT_ENDPOINT: 'localhost:8017'
-  DBM_ENV_NAME_PROD: 'PRD'
-  DBM_PROJECT_NAME: 'Demo-MSSQL'
-  DBM_AUTH_TYPE: 'DBmaestroAccount'
-  PACKAGE_NAME: 'PACKAGE_NAME_PLACEHOLDER'
+  - group: DBmaestro-Credentials
+  - name: DBM_JAR_PATH
+    value: 'C:\Program Files (x86)\DBmaestro\DOP Server\Agent\DBmaestroAgent.jar'
+  - name: DBM_AGENT_ENDPOINT
+    value: 'localhost:8017'
+  - name: DBM_ENV_NAME_PROD
+    value: 'PRD'
+  - name: DBM_PROJECT_NAME
+    value: 'Demo-MSSQL'
+  - name: DBM_AUTH_TYPE
+    value: 'DBmaestroAccount'
+  - name: PACKAGE_NAME
+    value: 'PACKAGE_NAME_PLACEHOLDER'
 
 stages:
 - stage: DeployPRD

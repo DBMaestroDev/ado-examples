@@ -79,16 +79,38 @@ git commit -m "Your commit message TaskID: ISSUE-75"
 
 Format: `TaskID: [A-Za-z0-9_-]+` anywhere in the commit message
 
+### Variable Groups (Required Setup)
+
+The pipelines require a **Variable Group** named `DBmaestro-Credentials` to store sensitive credentials:
+
+#### Creating the Variable Group
+
+1. In Azure DevOps, go to **Pipelines** → **Library**
+2. Click **"+ Variable group"**
+3. Enter name: `DBmaestro-Credentials`
+4. Add variables:
+   - **DBMUsername**: Your DBmaestro service account username
+     - Click the **lock icon** to mark as secret
+   - **DBMPassword**: Your DBmaestro service account password
+     - Click the **lock icon** to mark as secret
+5. Click **"Save"**
+
+#### Why Variable Groups?
+
+- **Security**: Credentials stored securely in Azure DevOps (not in YAML files)
+- **Reusability**: Automatically available to all pipelines that reference the group
+- **Dynamic Pipelines**: Scheduled production pipelines inherit credentials from the group without manual setup
+
 ### Pipeline Variables
 
-#### Required (Must be set as pipeline secrets)
-- `DBMUsername`: DBmaestro service account username
-- `DBMPassword`: DBmaestro service account password
+#### From Variable Group (Secure)
+- `DBMUsername`: DBmaestro service account username (from `DBmaestro-Credentials`)
+- `DBMPassword`: DBmaestro service account password (from `DBmaestro-Credentials`)
 
 #### Optional (Set during approval stages)
 - `TargetDeploymentDate`: Custom production deployment time (format: `YYYY-MM-DD HH:MM:SS`)
   - Example: `2025-11-17 14:30:00`
-  - Default if not specified: Tomorrow at 2 AM
+  - Default if not specified: 5 minutes from approval
 
 ## Scheduling Production Deployment
 
@@ -112,7 +134,7 @@ When the "Set Production Deployment Time" approval stage appears:
 5. **Click "Save"**
 6. **Click "Approve"**
 
-The pipeline will use your custom date/time instead of the default.
+The pipeline will use your custom date/time instead of the default (5 minutes from approval).
 
 ## Pipeline Details
 
