@@ -25,6 +25,7 @@ variables:
   DBM_ENV_NAME_PROD: 'PRD'
   DBM_PROJECT_NAME: 'Demo-MSSQL'
   DBM_AUTH_TYPE: 'DBmaestroAccount'
+  agent.diagnostic: false
 
 stages:
 - stage: ExtractTaskID
