@@ -375,7 +375,7 @@ stages:
     - powershell: |
         # Wait for Azure DevOps to detect the new file
         Write-Host "Waiting for Azure DevOps to index the new pipeline file..."
-        Start-Sleep -Seconds 15
+        Start-Sleep -Seconds 30
         
         # Verify git commit was successful
         if ("$(GIT_COMMIT_SUCCESS)" -ne "true") {
