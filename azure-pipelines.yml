@@ -249,7 +249,7 @@ stages:
     - task: ManualValidation@0
       inputs:
         notifyUsers: 'nicolast@dbmaestro.com'
-        instructions: 'QAS deployment completed successfully. Please review and specify the production deployment schedule. To set a custom date, add variable "TargetDeploymentDate" with format: "2025-11-17 14:30:00" (YYYY-MM-DD HH:MM:SS). Default if not specified: Tomorrow at 2 AM.'
+        instructions: 'QAS deployment completed successfully. Please review and specify the production deployment schedule. To set a custom date, add variable "TargetDeploymentDate" with format: "2025-11-17 14:30:00" (YYYY-MM-DD HH:MM:SS). Default if not specified: 5 minutes from approval.'
         onTimeout: 'reject'
   
   - job: ScheduleUpgrade
@@ -278,16 +278,16 @@ stages:
         $targetDateInput = "$(TargetDeploymentDate)"
         
         if ([string]::IsNullOrWhiteSpace($targetDateInput)) {
-          # Default: tomorrow at 2 AM
-          $targetDate = (Get-Date).Date.AddDays(1).AddHours(2)
+          # Default: 5 minutes from now
+          $targetDate = (Get-Date).AddMinutes(5)
           Write-Host "No custom date provided. Using default: $targetDate"
         } else {
           try {
             $targetDate = [DateTime]::Parse($targetDateInput)
             Write-Host "Using custom deployment date: $targetDate"
           } catch {
-            Write-Warning "Failed to parse custom date '$targetDateInput'. Using default."
-            $targetDate = (Get-Date).Date.AddDays(1).AddHours(2)
+            Write-Host "Failed to parse custom date '$targetDateInput'. Using default."
+            $targetDate = (Get-Date).AddMinutes(5)
           }
         }
         
