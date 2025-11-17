@@ -52,7 +52,6 @@ stages:
           -BackupBehavior True `
           -RestoreBehavior True `
           -Server "$(DBM_AGENT_ENDPOINT)" `
-          -UseSSL True `
           -AuthType "$(DBM_AUTH_TYPE)" `
           -UserName "$(DBMUsername)" `
           -Password "$(DBMPassword)"

@@ -109,7 +109,6 @@ stages:
           -CreateDowngradeScripts True `
           -PackageName "$(EXTRACTED_PACKAGE_NAME)" `
           -Server "$(DBM_AGENT_ENDPOINT)" `
-          -UseSSL True `
           -AuthType "$(DBM_AUTH_TYPE)" `
           -UserName "$(DBMUsername)" `
           -Password "$(DBMPassword)"
@@ -140,7 +139,6 @@ stages:
           -ProjectName "$(DBM_PROJECT_NAME)" `
           -Server "$(DBM_AGENT_ENDPOINT)" `
           -PackageName "$(EXTRACTED_PACKAGE_NAME)" `
-          -UseSSL True `
           -AuthType "$(DBM_AUTH_TYPE)" `
           -UserName "$(DBMUsername)" `
           -Password "$(DBMPassword)"
@@ -174,7 +172,6 @@ stages:
           -BackupBehavior True `
           -RestoreBehavior True `
           -Server "$(DBM_AGENT_ENDPOINT)" `
-          -UseSSL True `
           -AuthType "$(DBM_AUTH_TYPE)" `
           -UserName "$(DBMUsername)" `
           -Password "$(DBMPassword)"
@@ -232,7 +229,6 @@ stages:
           -BackupBehavior True `
           -RestoreBehavior True `
           -Server "$(DBM_AGENT_ENDPOINT)" `
-          -UseSSL True `
           -AuthType "$(DBM_AUTH_TYPE)" `
           -UserName "$(DBMUsername)" `
           -Password "$(DBMPassword)"
