@@ -249,7 +249,6 @@ stages:
   jobs:
   - job: SetDeploymentTime
     displayName: 'Set Production Deployment Time'
-    pool: server
     timeoutInMinutes: 1440
     steps:
     - powershell: |
