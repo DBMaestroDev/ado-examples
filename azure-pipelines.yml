@@ -247,8 +247,20 @@ stages:
   - UpgradeQAS
   condition: succeeded()
   jobs:
+  - job: ApprovalForDeployment
+    displayName: 'Approval: Production Deployment'
+    pool: server
+    timeoutInMinutes: 1440
+    steps:
+    - task: ManualValidation@0
+      inputs:
+        notifyUsers: 'nicolast@dbmaestro.com'
+        instructions: 'QAS deployment completed successfully. Please review and approve to proceed with production deployment scheduling.'
+        onTimeout: 'reject'
+  
   - job: SetDeploymentTime
     displayName: 'Set Production Deployment Time'
+    dependsOn: ApprovalForDeployment
     timeoutInMinutes: 1440
     steps:
     - powershell: |
@@ -263,12 +275,6 @@ stages:
         Write-Host "========================================" -ForegroundColor Cyan
         Write-Host ""
       displayName: 'Display Current Deployment Date Value'
-    
-    - task: ManualValidation@0
-      inputs:
-        notifyUsers: 'nicolast@dbmaestro.com'
-        instructions: 'QAS deployment completed successfully. Please review and approve to proceed with production deployment scheduling.'
-        onTimeout: 'reject'
     
     - powershell: |
         Write-Host ""
