@@ -8,6 +8,8 @@ schedules:
 
 trigger: none
 
+name: DBmaestro Production Deployment - PACKAGE_NAME_PLACEHOLDER
+
 pool:
   name: NicolasHosted
 

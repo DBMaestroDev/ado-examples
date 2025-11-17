@@ -95,6 +95,18 @@ The pipelines require a **Variable Group** named `DBmaestro-Credentials` to stor
      - Click the **lock icon** to mark as secret
 5. Click **"Save"**
 
+#### Important: Variable Group Access
+
+**The variable group must be accessible to all pipelines in the project**, especially the dynamically generated scheduled pipelines.
+
+To grant access:
+1. In **Pipelines** → **Library**, click on `DBmaestro-Credentials`
+2. Click the **⋮ (three dots)** menu at the top right
+3. Select **"Open access"** to allow all pipelines in the project to use this variable group
+4. Confirm the permission change
+
+Without this setting, dynamically created scheduled pipelines will fail with a permission error when trying to access the variable group.
+
 #### Why Variable Groups?
 
 - **Security**: Credentials stored securely in Azure DevOps (not in YAML files)

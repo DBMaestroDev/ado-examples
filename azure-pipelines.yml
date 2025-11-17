@@ -1,5 +1,7 @@
 trigger: none
 
+name: DBmaestro CI/CD Pipeline
+
 resources:
   repositories:
     - repository: ado-source-control
