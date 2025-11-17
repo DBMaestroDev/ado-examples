@@ -14,9 +14,7 @@ pool:
   name: NicolasHosted
 
 variables:
-  dbmaestroVersion: '2024.1.0'
   packageName: '$(Build.Repository.Name)-$(Build.BuildNumber)'
-  releaseSourceEnvironment: 'release-source'
   DBM_JAR_PATH: 'C:\Program Files (x86)\DBmaestro\DOP Server\Agent\DBmaestroAgent.jar'
   DBM_AGENT_ENDPOINT: 'localhost:8017'
   DBM_ENV_NAME_DEV: 'DEV_USER'
@@ -26,6 +24,7 @@ variables:
   DBM_PROJECT_NAME: 'Demo-MSSQL'
   DBM_AUTH_TYPE: 'DBmaestroAccount'
   agent.diagnostic: false
+  AZP_AGENT_SKIP_DISK_SPACE_WARNING: 'true'
 
 stages:
 - stage: ExtractTaskID
@@ -139,14 +138,14 @@ stages:
           -Password "$(DBMPassword)"
       displayName: 'Run DBmaestro Precheck'
 
-- stage: UpgradeReleaseSource
-  displayName: 'Upgrade Release Source Environment'
+- stage: UpgradeDEV
+  displayName: 'Upgrade DEV Environment'
   dependsOn:
   - RunPrecheck
   condition: succeeded()
   jobs:
-  - job: DeployToReleaseSource
-    displayName: 'Deploy Package to Release Source'
+  - job: DeployToDEV
+    displayName: 'Deploy Package to DEV'
     steps:
     - download: current
       artifact: taskid-artifact
@@ -171,7 +170,7 @@ stages:
           -AuthType "$(DBM_AUTH_TYPE)" `
           -UserName "$(DBMUsername)" `
           -Password "$(DBMPassword)"
-      displayName: 'Upgrade Release Source Environment'
+      displayName: 'Upgrade DEV Environment'
     
     - script: |
         echo Deployment Summary:
@@ -183,7 +182,7 @@ stages:
 - stage: ApprovalForQAS
   displayName: 'Approval: Proceed to QAS'
   dependsOn:
-  - UpgradeReleaseSource
+  - UpgradeDEV
   condition: succeeded()
   jobs:
   - job: ApprovalJob
@@ -194,7 +193,7 @@ stages:
     - task: ManualValidation@0
       inputs:
         notifyUsers: 'nicolast@dbmaestro.com'
-        instructions: 'Please review the Release Source deployment and approve to proceed with QAS upgrade.'
+        instructions: 'Please review the DEV deployment and approve to proceed with QAS upgrade.'
         onTimeout: 'reject'
 
 - stage: UpgradeQAS
@@ -332,8 +331,9 @@ stages:
         git config user.email "azure-pipeline@dbmaestro.com"
         git config user.name "Azure DevOps Pipeline"
         
-        git checkout main
-        git pull origin main
+        # Fetch latest and checkout main branch
+        git fetch origin
+        git checkout -B main origin/main
         
         git add "$(PIPELINE_FILE_NAME)"
         git commit -m "Add scheduled production deployment for $(EXTRACTED_PACKAGE_NAME) [skip ci]"
