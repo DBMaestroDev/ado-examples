@@ -387,7 +387,7 @@ stages:
               type = "azureReposGit"
             }
           }
-          folder = "\\Production Deployments"
+          folder = "Production Deployments"
           name = $pipelineName
         } | ConvertTo-Json -Depth 10
         
