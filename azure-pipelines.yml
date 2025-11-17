@@ -73,50 +73,49 @@ stages:
 #   condition: succeeded()
 #   jobs:
 #   - job: PackageCreation
-    displayName: 'Create Package'
-    steps:
-    - download: current
-      artifact: taskid-artifact
-      displayName: 'Download TaskID Artifact'
-    
-    - powershell: |
-        $taskIdContent = Get-Content "$(Pipeline.Workspace)/taskid-artifact/taskid.txt" -Raw
-        $taskId = $taskIdContent.Trim()
-        Write-Host "Read TaskID from artifact: $taskId"
-        Write-Output "##vso[task.setvariable variable=EXTRACTED_PACKAGE_NAME]$taskId"
-      displayName: 'Load TaskID from Artifact'
-    
-    - script: |
-        echo Package Name: $(EXTRACTED_PACKAGE_NAME)
-        echo Build ID: $(Build.BuildId)
-        echo Repository: $(Build.Repository.Name)
-      displayName: 'Display Build Information'
-    
-    - powershell: |
-        Write-Host "Debug - EXTRACTED_PACKAGE_NAME variable: $(EXTRACTED_PACKAGE_NAME)"
-        if ([string]::IsNullOrWhiteSpace("$(EXTRACTED_PACKAGE_NAME)")) {
-          Write-Error "EXTRACTED_PACKAGE_NAME is empty!"
-          exit 1
-        }
-      displayName: 'Validate Package Name'
-    
-    - powershell: |
-        java -jar "$(DBM_JAR_PATH)" -Build `
-          -ProjectName "$(DBM_PROJECT_NAME)" `
-          -EnvName "$(DBM_ENV_NAME_DEV)" `
-          -VersionType "Tasks" `
-          -AdditionalInformation "$(EXTRACTED_PACKAGE_NAME)" `
-          -CreatePackage True `
-          -PackageName "$(EXTRACTED_PACKAGE_NAME)" `
-          -Server "$(DBM_AGENT_ENDPOINT)" `
-          -UseSSL True `
-          -AuthType "$(DBM_AUTH_TYPE)" `
-          -UserName "$(DBMUsername)" `
-          -Password "$(DBMPassword)"
-
-      displayName: 'Create DBmaestro Package'
-# -CreateDowngradeScripts True `
-# we need to add this later
+#     displayName: 'Create Package'
+#     steps:
+#     - download: current
+#       artifact: taskid-artifact
+#       displayName: 'Download TaskID Artifact'
+#     
+#     - powershell: |
+#         $taskIdContent = Get-Content "$(Pipeline.Workspace)/taskid-artifact/taskid.txt" -Raw
+#         $taskId = $taskIdContent.Trim()
+#         Write-Host "Read TaskID from artifact: $taskId"
+#         Write-Output "##vso[task.setvariable variable=EXTRACTED_PACKAGE_NAME]$taskId"
+#       displayName: 'Load TaskID from Artifact'
+#     
+#     - script: |
+#         echo Package Name: $(EXTRACTED_PACKAGE_NAME)
+#         echo Build ID: $(Build.BuildId)
+#         echo Repository: $(Build.Repository.Name)
+#       displayName: 'Display Build Information'
+#     
+#     - powershell: |
+#         Write-Host "Debug - EXTRACTED_PACKAGE_NAME variable: $(EXTRACTED_PACKAGE_NAME)"
+#         if ([string]::IsNullOrWhiteSpace("$(EXTRACTED_PACKAGE_NAME)")) {
+#           Write-Error "EXTRACTED_PACKAGE_NAME is empty!"
+#           exit 1
+#         }
+#       displayName: 'Validate Package Name'
+#     
+#     - powershell: |
+#         java -jar "$(DBM_JAR_PATH)" -Build `
+#           -ProjectName "$(DBM_PROJECT_NAME)" `
+#           -EnvName "$(DBM_ENV_NAME_DEV)" `
+#           -VersionType "Tasks" `
+#           -AdditionalInformation "$(EXTRACTED_PACKAGE_NAME)" `
+#           -CreatePackage True `
+#           -PackageName "$(EXTRACTED_PACKAGE_NAME)" `
+#           -Server "$(DBM_AGENT_ENDPOINT)" `
+#           -UseSSL True `
+#           -AuthType "$(DBM_AUTH_TYPE)" `
+#           -UserName "$(DBMUsername)" `
+#           -Password "$(DBMPassword)"
+#       displayName: 'Create DBmaestro Package'
+# # -CreateDowngradeScripts True `
+# # we need to add this later
 
 # DISABLED FOR TESTING
 # - stage: RunPrecheck
@@ -126,29 +125,29 @@ stages:
 #   condition: succeeded()
 #   jobs:
 #   - job: PrecheckValidation
-    displayName: 'Validate Package'
-    steps:
-    - download: current
-      artifact: taskid-artifact
-      displayName: 'Download TaskID Artifact'
-    
-    - powershell: |
-        $taskIdContent = Get-Content "$(Pipeline.Workspace)/taskid-artifact/taskid.txt" -Raw
-        $taskId = $taskIdContent.Trim()
-        Write-Host "Read TaskID from artifact: $taskId"
-        Write-Output "##vso[task.setvariable variable=EXTRACTED_PACKAGE_NAME]$taskId"
-      displayName: 'Load TaskID from Artifact'
-    
-    - powershell: |
-        java -jar "$(DBM_JAR_PATH)" -PreCheck `
-          -ProjectName "$(DBM_PROJECT_NAME)" `
-          -Server "$(DBM_AGENT_ENDPOINT)" `
-          -PackageName "$(EXTRACTED_PACKAGE_NAME)" `
-          -UseSSL True `
-          -AuthType "$(DBM_AUTH_TYPE)" `
-          -UserName "$(DBMUsername)" `
-          -Password "$(DBMPassword)"
-      displayName: 'Run DBmaestro Precheck'
+#     displayName: 'Validate Package'
+#     steps:
+#     - download: current
+#       artifact: taskid-artifact
+#       displayName: 'Download TaskID Artifact'
+#     
+#     - powershell: |
+#         $taskIdContent = Get-Content "$(Pipeline.Workspace)/taskid-artifact/taskid.txt" -Raw
+#         $taskId = $taskIdContent.Trim()
+#         Write-Host "Read TaskID from artifact: $taskId"
+#         Write-Output "##vso[task.setvariable variable=EXTRACTED_PACKAGE_NAME]$taskId"
+#       displayName: 'Load TaskID from Artifact'
+#     
+#     - powershell: |
+#         java -jar "$(DBM_JAR_PATH)" -PreCheck `
+#           -ProjectName "$(DBM_PROJECT_NAME)" `
+#           -Server "$(DBM_AGENT_ENDPOINT)" `
+#           -PackageName "$(EXTRACTED_PACKAGE_NAME)" `
+#           -UseSSL True `
+#           -AuthType "$(DBM_AUTH_TYPE)" `
+#           -UserName "$(DBMUsername)" `
+#           -Password "$(DBMPassword)"
+#       displayName: 'Run DBmaestro Precheck'
 
 # DISABLED FOR TESTING
 # - stage: UpgradeDEV
@@ -158,39 +157,39 @@ stages:
 #   condition: succeeded()
 #   jobs:
 #   - job: DeployToDEV
-    displayName: 'Deploy Package to DEV'
-    steps:
-    - download: current
-      artifact: taskid-artifact
-      displayName: 'Download TaskID Artifact'
-    
-    - powershell: |
-        $taskIdContent = Get-Content "$(Pipeline.Workspace)/taskid-artifact/taskid.txt" -Raw
-        $taskId = $taskIdContent.Trim()
-        Write-Host "Read TaskID from artifact: $taskId"
-        Write-Output "##vso[task.setvariable variable=EXTRACTED_PACKAGE_NAME]$taskId"
-      displayName: 'Load TaskID from Artifact'
-    
-    - powershell: |
-        java -jar "$(DBM_JAR_PATH)" -Upgrade `
-          -ProjectName "$(DBM_PROJECT_NAME)" `
-          -EnvName "$(DBM_ENV_NAME_RS)" `
-          -PackageName "$(EXTRACTED_PACKAGE_NAME)" `
-          -BackupBehavior True `
-          -RestoreBehavior True `
-          -Server "$(DBM_AGENT_ENDPOINT)" `
-          -UseSSL True `
-          -AuthType "$(DBM_AUTH_TYPE)" `
-          -UserName "$(DBMUsername)" `
-          -Password "$(DBMPassword)"
-      displayName: 'Upgrade DEV Environment'
-    
-    - script: |
-        echo Deployment Summary:
-        echo Package: $(EXTRACTED_PACKAGE_NAME)
-        echo Environment: $(DBM_ENV_NAME_RS)
-        echo Status: SUCCESS
-      displayName: 'Display Deployment Summary'
+#     displayName: 'Deploy Package to DEV'
+#     steps:
+#     - download: current
+#       artifact: taskid-artifact
+#       displayName: 'Download TaskID Artifact'
+#     
+#     - powershell: |
+#         $taskIdContent = Get-Content "$(Pipeline.Workspace)/taskid-artifact/taskid.txt" -Raw
+#         $taskId = $taskIdContent.Trim()
+#         Write-Host "Read TaskID from artifact: $taskId"
+#         Write-Output "##vso[task.setvariable variable=EXTRACTED_PACKAGE_NAME]$taskId"
+#       displayName: 'Load TaskID from Artifact'
+#     
+#     - powershell: |
+#         java -jar "$(DBM_JAR_PATH)" -Upgrade `
+#           -ProjectName "$(DBM_PROJECT_NAME)" `
+#           -EnvName "$(DBM_ENV_NAME_RS)" `
+#           -PackageName "$(EXTRACTED_PACKAGE_NAME)" `
+#           -BackupBehavior True `
+#           -RestoreBehavior True `
+#           -Server "$(DBM_AGENT_ENDPOINT)" `
+#           -UseSSL True `
+#           -AuthType "$(DBM_AUTH_TYPE)" `
+#           -UserName "$(DBMUsername)" `
+#           -Password "$(DBMPassword)"
+#       displayName: 'Upgrade DEV Environment'
+#     
+#     - script: |
+#         echo Deployment Summary:
+#         echo Package: $(EXTRACTED_PACKAGE_NAME)
+#         echo Environment: $(DBM_ENV_NAME_RS)
+#         echo Status: SUCCESS
+#       displayName: 'Display Deployment Summary'
 
 # DISABLED FOR TESTING
 # - stage: ApprovalForQAS
@@ -200,15 +199,15 @@ stages:
 #   condition: succeeded()
 #   jobs:
 #   - job: ApprovalJob
-    displayName: 'Manual Approval'
-    pool: server
-    timeoutInMinutes: 1440
-    steps:
-    - task: ManualValidation@0
-      inputs:
-        notifyUsers: 'nicolast@dbmaestro.com'
-        instructions: 'Please review the DEV deployment and approve to proceed with QAS upgrade.'
-        onTimeout: 'reject'
+#     displayName: 'Manual Approval'
+#     pool: server
+#     timeoutInMinutes: 1440
+#     steps:
+#     - task: ManualValidation@0
+#       inputs:
+#         notifyUsers: 'nicolast@dbmaestro.com'
+#         instructions: 'Please review the DEV deployment and approve to proceed with QAS upgrade.'
+#         onTimeout: 'reject'
 
 # DISABLED FOR TESTING
 # - stage: UpgradeQAS
@@ -218,39 +217,39 @@ stages:
 #   condition: succeeded()
 #   jobs:
 #   - job: DeployToQAS
-    displayName: 'Deploy Package to QAS'
-    steps:
-    - download: current
-      artifact: taskid-artifact
-      displayName: 'Download TaskID Artifact'
-    
-    - powershell: |
-        $taskIdContent = Get-Content "$(Pipeline.Workspace)/taskid-artifact/taskid.txt" -Raw
-        $taskId = $taskIdContent.Trim()
-        Write-Host "Read TaskID from artifact: $taskId"
-        Write-Output "##vso[task.setvariable variable=EXTRACTED_PACKAGE_NAME]$taskId"
-      displayName: 'Load TaskID from Artifact'
-    
-    - powershell: |
-        java -jar "$(DBM_JAR_PATH)" -Upgrade `
-          -ProjectName "$(DBM_PROJECT_NAME)" `
-          -EnvName "$(DBM_ENV_NAME_QA)" `
-          -PackageName "$(EXTRACTED_PACKAGE_NAME)" `
-          -BackupBehavior True `
-          -RestoreBehavior True `
-          -Server "$(DBM_AGENT_ENDPOINT)" `
-          -UseSSL True `
-          -AuthType "$(DBM_AUTH_TYPE)" `
-          -UserName "$(DBMUsername)" `
-          -Password "$(DBMPassword)"
-      displayName: 'Upgrade QAS Environment'
-    
-    - script: |
-        echo Deployment Summary:
-        echo Package: $(EXTRACTED_PACKAGE_NAME)
-        echo Environment: $(DBM_ENV_NAME_QA)
-        echo Status: SUCCESS
-      displayName: 'Display QAS Deployment Summary'
+#     displayName: 'Deploy Package to QAS'
+#     steps:
+#     - download: current
+#       artifact: taskid-artifact
+#       displayName: 'Download TaskID Artifact'
+#     
+#     - powershell: |
+#         $taskIdContent = Get-Content "$(Pipeline.Workspace)/taskid-artifact/taskid.txt" -Raw
+#         $taskId = $taskIdContent.Trim()
+#         Write-Host "Read TaskID from artifact: $taskId"
+#         Write-Output "##vso[task.setvariable variable=EXTRACTED_PACKAGE_NAME]$taskId"
+#       displayName: 'Load TaskID from Artifact'
+#     
+#     - powershell: |
+#         java -jar "$(DBM_JAR_PATH)" -Upgrade `
+#           -ProjectName "$(DBM_PROJECT_NAME)" `
+#           -EnvName "$(DBM_ENV_NAME_QA)" `
+#           -PackageName "$(EXTRACTED_PACKAGE_NAME)" `
+#           -BackupBehavior True `
+#           -RestoreBehavior True `
+#           -Server "$(DBM_AGENT_ENDPOINT)" `
+#           -UseSSL True `
+#           -AuthType "$(DBM_AUTH_TYPE)" `
+#           -UserName "$(DBMUsername)" `
+#           -Password "$(DBMPassword)"
+#       displayName: 'Upgrade QAS Environment'
+#     
+#     - script: |
+#         echo Deployment Summary:
+#         echo Package: $(EXTRACTED_PACKAGE_NAME)
+#         echo Environment: $(DBM_ENV_NAME_QA)
+#         echo Status: SUCCESS
+#       displayName: 'Display QAS Deployment Summary'
 
 - stage: SchedulePRDUpgrade
   displayName: 'Schedule PRD Upgrade'
