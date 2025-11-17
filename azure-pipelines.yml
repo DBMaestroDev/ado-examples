@@ -243,9 +243,25 @@ stages:
   - UpgradeQAS
   condition: succeeded()
   jobs:
+  - job: SetDeploymentTime
+    displayName: 'Set Production Deployment Time'
+    pool: server
+    timeoutInMinutes: 1440
+    steps:
+    - task: ManualValidation@0
+      inputs:
+        notifyUsers: 'nicolast@dbmaestro.com'
+        instructions: 'QAS deployment completed successfully. Please review and specify the production deployment schedule. To set a custom date, add variable "TargetDeploymentDate" with format: "2025-11-17 14:30:00" (YYYY-MM-DD HH:MM:SS). Default if not specified: Tomorrow at 2 AM.'
+        onTimeout: 'reject'
+  
   - job: ScheduleUpgrade
     displayName: 'Schedule Production Upgrade'
+    dependsOn: SetDeploymentTime
     steps:
+    - checkout: self
+      persistCredentials: true
+      displayName: 'Checkout Repository'
+    
     - download: current
       artifact: taskid-artifact
       displayName: 'Download TaskID Artifact'
@@ -258,29 +274,138 @@ stages:
       displayName: 'Load TaskID from Artifact'
     
     - powershell: |
-        Write-Host "Scheduling upgrade for package: $(EXTRACTED_PACKAGE_NAME) to environment: $(DBM_ENV_NAME_PROD)"
-        Write-Host "This package is now ready for production deployment."
+        $packageName = "$(EXTRACTED_PACKAGE_NAME)"
+        
+        # Check if custom date provided via pipeline variable, otherwise use default
+        $targetDateInput = "$(TargetDeploymentDate)"
+        
+        if ([string]::IsNullOrWhiteSpace($targetDateInput)) {
+          # Default: tomorrow at 2 AM
+          $targetDate = (Get-Date).Date.AddDays(1).AddHours(2)
+          Write-Host "No custom date provided. Using default: $targetDate"
+        } else {
+          try {
+            $targetDate = [DateTime]::Parse($targetDateInput)
+            Write-Host "Using custom deployment date: $targetDate"
+          } catch {
+            Write-Warning "Failed to parse custom date '$targetDateInput'. Using default."
+            $targetDate = (Get-Date).Date.AddDays(1).AddHours(2)
+          }
+        }
+        
+        $cronSchedule = "$($targetDate.Minute) $($targetDate.Hour) $($targetDate.Day) $($targetDate.Month) *"
+        Write-Host "Package: $packageName"
+        Write-Host "Scheduled deployment time: $targetDate"
+        Write-Host "Cron schedule: $cronSchedule"
         Write-Host ""
-        Write-Host "To complete the production upgrade, run the following command:"
-        Write-Host "java -jar `"$(DBM_JAR_PATH)`" -Upgrade ``"
-        Write-Host "  -ProjectName `"$(DBM_PROJECT_NAME)`" ``"
-        Write-Host "  -EnvName `"$(DBM_ENV_NAME_PROD)`" ``"
-        Write-Host "  -PackageName `"$(EXTRACTED_PACKAGE_NAME)`" ``"
-        Write-Host "  -BackupBehavior True ``"
-        Write-Host "  -RestoreBehavior True ``"
-        Write-Host "  -Server `"$(DBM_AGENT_ENDPOINT)`" ``"
-        Write-Host "  -UseSSL True ``"
-        Write-Host "  -AuthType `"$(DBM_AUTH_TYPE)`" ``"
-        Write-Host "  -UserName `"<username>`" ``"
-        Write-Host "  -Password `"<password>`""
-        Write-Host ""
-        Write-Host "Or use the DBmaestro web UI to schedule the upgrade."
-      displayName: 'Log Scheduled Upgrade Details'
+        
+        # Read template
+        $templatePath = "$(Build.SourcesDirectory)/deploy-prd-template.yml"
+        if (-not (Test-Path $templatePath)) {
+          Write-Error "Template file not found: $templatePath"
+          exit 1
+        }
+        
+        $template = Get-Content $templatePath -Raw
+        
+        # Replace placeholders
+        $customPipeline = $template `
+          -replace 'CRON_SCHEDULE_PLACEHOLDER', $cronSchedule `
+          -replace 'PACKAGE_NAME_PLACEHOLDER', $packageName
+        
+        # Save as new file
+        $pipelineFileName = "deploy-prd-$packageName.yml"
+        $pipelinePath = "$(Build.SourcesDirectory)/$pipelineFileName"
+        $customPipeline | Out-File -FilePath $pipelinePath -Encoding UTF8 -Force
+        
+        Write-Host "Created pipeline file: $pipelineFileName"
+        Write-Host "Pipeline path: $pipelinePath"
+        Write-Output "##vso[task.setvariable variable=PIPELINE_FILE_NAME]$pipelineFileName"
+        Write-Output "##vso[task.setvariable variable=TARGET_DATE]$($targetDate.ToString('yyyy-MM-dd HH:mm:ss'))"
+      displayName: 'Create Custom Production Pipeline'
+    
+    - powershell: |
+        # Commit and push the new pipeline file
+        cd "$(Build.SourcesDirectory)"
+        
+        git config user.email "azure-pipeline@dbmaestro.com"
+        git config user.name "Azure DevOps Pipeline"
+        
+        git checkout main
+        git pull origin main
+        
+        git add "$(PIPELINE_FILE_NAME)"
+        git commit -m "Add scheduled production deployment for $(EXTRACTED_PACKAGE_NAME) [skip ci]"
+        git push origin main
+        
+        Write-Host "Pipeline file committed and pushed to repository"
+      displayName: 'Commit Pipeline File to Repository'
+      env:
+        SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+    
+    - powershell: |
+        # Wait for Azure DevOps to detect the new file
+        Write-Host "Waiting for Azure DevOps to index the new pipeline file..."
+        Start-Sleep -Seconds 15
+        
+        # Create pipeline via REST API
+        $orgUrl = "$(System.CollectionUri)"
+        $project = "$(System.TeamProject)"
+        $pat = "$(System.AccessToken)"
+        
+        $headers = @{
+          Authorization = "Bearer $pat"
+          "Content-Type" = "application/json"
+        }
+        
+        $pipelineName = "Deploy-PRD-$(EXTRACTED_PACKAGE_NAME)"
+        $body = @{
+          configuration = @{
+            type = "yaml"
+            path = "/$(PIPELINE_FILE_NAME)"
+            repository = @{
+              id = "$(Build.Repository.ID)"
+              type = "azureReposGit"
+            }
+          }
+          folder = "\\Production Deployments"
+          name = $pipelineName
+        } | ConvertTo-Json -Depth 10
+        
+        Write-Host "Creating pipeline: $pipelineName"
+        Write-Host "YAML path: /$(PIPELINE_FILE_NAME)"
+        
+        try {
+          $uri = "$orgUrl$project/_apis/pipelines?api-version=7.1-preview.1"
+          $response = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -Body $body
+          
+          Write-Host ""
+          Write-Host "=== Pipeline Created Successfully ===" -ForegroundColor Green
+          Write-Host "Pipeline ID: $($response.id)"
+          Write-Host "Pipeline Name: $($response.name)"
+          Write-Host "Pipeline URL: $($response._links.web.href)"
+          Write-Host ""
+          Write-Host "Scheduled deployment: $(TARGET_DATE)"
+          Write-Host "Package: $(EXTRACTED_PACKAGE_NAME)"
+          Write-Host "Target Environment: PRD"
+          Write-Host ""
+          Write-Host "The pipeline will automatically run at the scheduled time."
+          
+        } catch {
+          Write-Error "Failed to create pipeline: $($_.Exception.Message)"
+          Write-Host "Response: $($_.Exception.Response)"
+          exit 1
+        }
+      displayName: 'Register Pipeline in Azure DevOps'
     
     - script: |
-        echo Production Upgrade Scheduled:
+        echo ===================================
+        echo Production Upgrade Scheduled
+        echo ===================================
         echo Package: $(EXTRACTED_PACKAGE_NAME)
         echo Target Environment: $(DBM_ENV_NAME_PROD)
-        echo Status: SCHEDULED (Awaiting manual execution)
+        echo Scheduled Time: $(TARGET_DATE)
+        echo Status: SCHEDULED (Automatic execution)
+        echo ===================================
       displayName: 'Display Schedule Summary'
 
