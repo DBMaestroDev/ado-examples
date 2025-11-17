@@ -48,8 +48,26 @@ The `azure-pipelines.yml` implements a comprehensive deployment orchestration wi
 - Azure DevOps Project with `ado-examples` repository
 - Build agent pool: `NicolasHosted`
 - DBmaestro agent running on `localhost:8017`
-- Pipeline credentials: `DBMUsername`, `DBMPassword`
-- Git repository access for pipeline file creation
+- **Git Repository Permissions**: Build service account must have `Contribute` and `Create Branch` permissions
+
+#### Setting Up Build Service Permissions
+
+The pipeline needs permission to commit and push the dynamic production pipeline YAML files:
+
+1. In Azure DevOps, go to **Project Settings** (bottom left)
+2. Navigate to **Repositories** → **ado-examples**
+3. Click the **Security** tab
+4. Search for: `[Project]\Build Service ([Organization])`
+   - Example: `poc\Build Service (dbmsc)`
+5. Set the following permissions to **Allow**:
+   - **Contribute**: Required to commit files
+   - **Create Branch**: Required to create main branch if needed
+6. Click **Save changes**
+
+Without these permissions, the pipeline will fail at the "Commit Pipeline File to Repository" stage with error:
+```
+TF401027: You need the Git 'GenericContribute' permission to perform this action
+```
 
 ### Commit Requirements
 

@@ -23,8 +23,6 @@ variables:
   DBM_ENV_NAME_PROD: 'PRD'
   DBM_PROJECT_NAME: 'Demo-MSSQL'
   DBM_AUTH_TYPE: 'DBmaestroAccount'
-  agent.diagnostic: false
-  AZP_AGENT_SKIP_DISK_SPACE_WARNING: 'true'
 
 stages:
 - stage: ExtractTaskID
@@ -337,9 +335,23 @@ stages:
         
         git add "$(PIPELINE_FILE_NAME)"
         git commit -m "Add scheduled production deployment for $(EXTRACTED_PACKAGE_NAME) [skip ci]"
+        
+        if ($LASTEXITCODE -ne 0) {
+          Write-Error "Git commit failed with exit code $LASTEXITCODE"
+          Write-Error "Build Service account may not have 'Contribute' permission. See README.md for setup instructions."
+          exit 1
+        }
+        
         git push origin main
         
+        if ($LASTEXITCODE -ne 0) {
+          Write-Error "Git push failed with exit code $LASTEXITCODE"
+          Write-Error "Build Service account may not have 'Contribute' permission. See README.md for setup instructions."
+          exit 1
+        }
+        
         Write-Host "Pipeline file committed and pushed to repository"
+        Write-Output "##vso[task.setvariable variable=GIT_COMMIT_SUCCESS]true"
       displayName: 'Commit Pipeline File to Repository'
       env:
         SYSTEM_ACCESSTOKEN: $(System.AccessToken)
@@ -348,6 +360,12 @@ stages:
         # Wait for Azure DevOps to detect the new file
         Write-Host "Waiting for Azure DevOps to index the new pipeline file..."
         Start-Sleep -Seconds 15
+        
+        # Verify git commit was successful
+        if ("$(GIT_COMMIT_SUCCESS)" -ne "true") {
+          Write-Error "Git commit failed. Pipeline file not pushed to repository. Cannot register pipeline."
+          exit 1
+        }
         
         # Create pipeline via REST API
         $orgUrl = "$(System.CollectionUri)"
@@ -375,9 +393,12 @@ stages:
         
         Write-Host "Creating pipeline: $pipelineName"
         Write-Host "YAML path: /$(PIPELINE_FILE_NAME)"
+        Write-Host "Request body:"
+        Write-Host $body
         
         try {
           $uri = "$orgUrl$project/_apis/pipelines?api-version=7.1-preview.1"
+          Write-Host "API URI: $uri"
           $response = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -Body $body
           
           Write-Host ""
@@ -394,7 +415,8 @@ stages:
           
         } catch {
           Write-Error "Failed to create pipeline: $($_.Exception.Message)"
-          Write-Host "Response: $($_.Exception.Response)"
+          Write-Error "Response: $($_.Exception.Response)"
+          Write-Error "Status Code: $($_.Exception.Response.StatusCode)"
           exit 1
         }
       displayName: 'Register Pipeline in Azure DevOps'
