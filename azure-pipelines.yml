@@ -26,7 +26,7 @@ variables:
   - name: DBM_ENV_NAME_DEV
     value: 'DEV_USER'
   - name: DBM_ENV_NAME_RS
-    value: 'DEV'
+    value: 'INTEGRACION'
   - name: DBM_ENV_NAME_QA
     value: 'QAS'
   - name: DBM_ENV_NAME_PROD
