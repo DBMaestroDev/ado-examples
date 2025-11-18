@@ -341,6 +341,9 @@ stages:
                 Write-Host "Extracted deployment date from work item: $extractedDate" -ForegroundColor Green
                 Write-Output "##vso[task.setvariable variable=TargetDeploymentDate]$extractedDate"
                 Write-Output "##vso[task.setvariable variable=DEPLOYMENT_DATE_PROVIDED]true"
+                
+                # Save to artifact for ScheduleUpgrade job to use
+                $extractedDate | Out-File -FilePath "$(Build.ArtifactStagingDirectory)/deploymentdate.txt" -NoNewline -Force
               } catch {
                 Write-Host "Warning: Could not parse extracted date '$extractedDate'." -ForegroundColor Yellow
                 Write-Output "##vso[task.setvariable variable=DEPLOYMENT_DATE_PROVIDED]false"
@@ -358,6 +361,11 @@ stages:
           Write-Output "##vso[task.setvariable variable=DEPLOYMENT_DATE_PROVIDED]false"
         }
       displayName: 'Extract Deployment Date from Work Item'
+    
+    - publish: $(Build.ArtifactStagingDirectory)/deploymentdate.txt
+      artifact: deploymentdate-artifact
+      displayName: 'Publish Deployment Date Artifact'
+      condition: always()
   
   - job: ScheduleUpgrade
     displayName: 'Schedule Production Upgrade'
@@ -371,6 +379,10 @@ stages:
       artifact: taskid-artifact
       displayName: 'Download TaskID Artifact'
     
+    - download: current
+      artifact: deploymentdate-artifact
+      displayName: 'Download Deployment Date Artifact'
+    
     - powershell: |
         $taskIdContent = Get-Content "$(Pipeline.Workspace)/taskid-artifact/taskid.txt" -Raw
         $taskId = $taskIdContent.Trim()
@@ -381,9 +393,17 @@ stages:
     - powershell: |
         $packageName = "$(EXTRACTED_PACKAGE_NAME)"
         
-        # Check if custom date provided via pipeline variable, otherwise use default
-        $targetDateInput = "$(TargetDeploymentDate)"
+        # Try to load deployment date from artifact
+        $deploymentDateFile = "$(Pipeline.Workspace)/deploymentdate-artifact/deploymentdate.txt"
+        $targetDateInput = ""
         
+        if (Test-Path $deploymentDateFile) {
+          $targetDateInput = Get-Content $deploymentDateFile -Raw
+          $targetDateInput = $targetDateInput.Trim()
+          Write-Host "Loaded deployment date from artifact: $targetDateInput"
+        }
+        
+        # If no custom date from artifact, use default
         if ([string]::IsNullOrWhiteSpace($targetDateInput)) {
           # Default: 5 minutes from now
           $targetDate = (Get-Date).AddMinutes(5)
