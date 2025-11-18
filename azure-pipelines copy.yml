@@ -247,20 +247,16 @@ stages:
   - UpgradeQAS
   condition: succeeded()
   jobs:
-  - deployment: ApprovalForDeployment
-    displayName: 'Approval: Production Deployment (Environment-based)'
-    environment: '$(DBM_ENV_NAME_PROD)'
-    pool:
-      name: NicolasHosted
+  - job: ApprovalForDeployment
+    displayName: 'Approval: Production Deployment'
+    pool: server
     timeoutInMinutes: 1440
-    strategy:
-      runOnce:
-        deploy:
-          steps:
-          - powershell: |
-              # This is an environment check: actual approval is enforced in the Environment's Approvals & checks
-              Write-Host "Waiting for environment approval on $(DBM_ENV_NAME_PROD)"
-            displayName: 'Await Environment Approval'
+    steps:
+    - task: ManualValidation@0
+      inputs:
+        notifyUsers: 'nicolast@dbmaestro.com'
+        instructions: 'QAS deployment completed successfully. Please review and approve to proceed with production deployment scheduling. Optional: In the approval comments, enter deployment date in format: YYYY-MM-DD HH:MM:SS UTC (e.g., 2025-11-18 14:30:00). Leave blank to use default (5 minutes from execution). Note: All times are in UTC/Coordinated Universal Time.'
+        onTimeout: 'reject'
   
   - job: SetDeploymentTime
     displayName: 'Set Production Deployment Time'
@@ -268,12 +264,10 @@ stages:
     timeoutInMinutes: 10
     steps:
     - powershell: |
-        # Get approval details from Azure DevOps REST API using Pipelines API environment expansion
+        # Get approval details from Azure DevOps REST API
         $orgUrl = "$(System.CollectionUri)"
         $project = "$(System.TeamProject)"
-        # pipelineId for REST call (use DefinitionId) and runId is Build.BuildId
-        $pipelineId = "$(System.DefinitionId)"
-        $runId = "$(Build.BuildId)"
+        $buildId = "$(Build.BuildId)"
         $pat = "$(ADO_PAT)"
         
         if ([string]::IsNullOrWhiteSpace($pat)) {
@@ -288,83 +282,47 @@ stages:
         }
         
         try {
-          $datePattern = '\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}'
-          # First, try to use the Pipelines API with environment expand
-          $pipelineUri = "$orgUrl$project/_apis/pipelines/$pipelineId/runs/$runId?api-version=7.1-preview.1&`$expand=environment"
-          Write-Host "Querying pipeline run for environment details: $pipelineUri"
-          $pipelineRun = Invoke-RestMethod -Uri $pipelineUri -Method Get -Headers $headers -ErrorAction SilentlyContinue
-
-          $found = $false
-          if ($pipelineRun -and $pipelineRun.environments) {
-            foreach ($env in $pipelineRun.environments) {
-              # Match using environment name or resource.environment.name where available
-              $envName = $null
-              if ($env.name) { $envName = $env.name }
-              elseif ($env.resource -and $env.resource.environment -and $env.resource.environment.name) { $envName = $env.resource.environment.name }
-
-              if ($envName -and ($envName -eq "$(DBM_ENV_NAME_PROD)" -or $envName -like "*$(DBM_ENV_NAME_PROD)*")) {
-                # iterate deploySteps -> operationStatus
-                Write-Host "Inspecting environment: $envName"
-                foreach ($deployStep in ($env.deploySteps | Where-Object { $_ -ne $null })) {
-                  foreach ($op in ($deployStep.operationStatus | Where-Object { $_ -ne $null })) {
-                    if ($op.comments) {
-                      Write-Host "Found operation comments: $($op.comments)"
-                      if ($op.comments -match $datePattern) {
-                        $extractedDate = $matches[0]
-                        try {
-                          $parsedDate = [DateTime]::Parse($extractedDate)
-                          Write-Host "Extracted date from operationStatus comments: $extractedDate" -ForegroundColor Green
-                          Write-Output "##vso[task.setvariable variable=TargetDeploymentDate]$extractedDate"
-                          Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]true"
-                          $found = $true
-                          break
-                        } catch {
-                          Write-Host "Warning: Could not parse extracted date from operationStatus comments." -ForegroundColor Yellow
-                        }
-                      }
-                    }
-                  }
-                  if ($found) { break }
-                }
-                if ($found) { break }
+          # Get timeline records to find the ManualValidation approval step
+          $uri = "$orgUrl$project/_apis/build/builds/$buildId/timeline?api-version=6.0"
+          Write-Host "Querying build timeline: $uri"
+          $response = Invoke-RestMethod -Uri $uri -Method Get -Headers $headers
+          
+          # Find the approval record and extract comments
+          $approvalRecord = $response.records | Where-Object { $_.type -eq "Task" -and $_.name -like "*Approval*" -and $_.result -eq "succeeded" } | Select-Object -First 1
+          
+          if ($approvalRecord) {
+            $approvalTime = $approvalRecord.finishTime
+            Write-Host "Found approval completed at: $approvalTime"
+            
+            # Get the log for the approval step to extract comments
+            $logUrl = "$orgUrl$project/_apis/build/builds/$buildId/logs/$($approvalRecord.logId)?api-version=6.0"
+            Write-Host "Retrieving approval log: $logUrl"
+            $logContent = Invoke-RestMethod -Uri $logUrl -Method Get -Headers $headers
+            
+            # Try to extract date from log content (comments may be in the log)
+            $datePattern = '\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}'
+            if ($logContent -match $datePattern) {
+              $extractedDate = $matches[0]
+              Write-Host "Extracted date from approval comments: $extractedDate" -ForegroundColor Green
+              
+              try {
+                $parsedDate = [DateTime]::Parse($extractedDate)
+                Write-Output "##vso[task.setvariable variable=TargetDeploymentDate]$extractedDate"
+                Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]true"
+              } catch {
+                Write-Host "Warning: Could not parse extracted date. Using default." -ForegroundColor Yellow
+                Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]false"
               }
-            }
-          }
-
-          # Fallback to timeline logs if env-based extraction not found or not available
-          if (-not $found) {
-            Write-Host "No environment comment date found via Pipelines API. Falling back to build timeline logs..." -ForegroundColor Yellow
-            $timelineUri = "$orgUrl$project/_apis/build/builds/$runId/timeline?api-version=7.0"
-            Write-Host "Querying build timeline: $timelineUri"
-            $timeline = Invoke-RestMethod -Uri $timelineUri -Method Get -Headers $headers -ErrorAction SilentlyContinue
-            if ($timeline -and $timeline.records) {
-              $approvalRecord = $timeline.records | Where-Object { $_.type -eq 'Task' -and $_.name -like '*Approval*' -and $_.result -eq 'succeeded' } | Select-Object -First 1
-              if ($approvalRecord -and $approvalRecord.log -and $approvalRecord.log.id -gt 0) {
-                $logUrl = "$orgUrl$project/_apis/build/builds/$runId/logs/$($approvalRecord.log.id)/lines?startLine=1&endLine=200&api-version=7.0"
-                Write-Host "Retrieving approval log lines: $logUrl"
-                $logLines = Invoke-RestMethod -Uri $logUrl -Method Get -Headers $headers -ErrorAction SilentlyContinue
-                if ($logLines -match $datePattern) {
-                  $extractedDate = $matches[0]
-                  try {
-                    $parsedDate = [DateTime]::Parse($extractedDate)
-                    Write-Host "Extracted date from log content: $extractedDate" -ForegroundColor Green
-                    Write-Output "##vso[task.setvariable variable=TargetDeploymentDate]$extractedDate"
-                    Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]true"
-                    $found = $true
-                  } catch {
-                    Write-Host "Warning: Could not parse extracted date from log content." -ForegroundColor Yellow
-                  }
-                }
-              }
-            }
-
-            if (-not $found) {
-              Write-Host "No date found in timeline logs either; using default scheduling behavior." -ForegroundColor Cyan
+            } else {
+              Write-Host "No date found in approval comments. Will use default or existing TargetDeploymentDate." -ForegroundColor Cyan
               Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]false"
             }
+          } else {
+            Write-Host "Approval record not found in timeline." -ForegroundColor Yellow
+            Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]false"
           }
         } catch {
-          Write-Host "Warning: Error while retrieving approval details: $($_.Exception.Message)" -ForegroundColor Yellow
+          Write-Host "Warning: Could not retrieve approval details: $($_.Exception.Message)" -ForegroundColor Yellow
           Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]false"
         }
       displayName: 'Extract Deployment Date from Approval Comments'
