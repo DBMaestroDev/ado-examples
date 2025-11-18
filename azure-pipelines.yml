@@ -38,32 +38,49 @@ variables:
 
 stages:
 - stage: ExtractTaskID
-  displayName: 'Extract TaskID from Commit Message'
+  displayName: 'Extract TaskID and WorkItemId from Commit Message'
   jobs:
   - job: TaskIDExtraction
-    displayName: 'Extract TaskID'
+    displayName: 'Extract TaskID and WorkItemId'
     steps:
     - powershell: |
-        # Extract TaskID from commit message
+        # Extract TaskID and WorkItemId from commit message
         $commitMessage = "$(Build.SourceVersionMessage)"
         Write-Host "Commit Message: $commitMessage"
         
+        # Extract TaskID for package creation
         if ($commitMessage -match 'TaskID:\s*([A-Za-z0-9_-]+)') {
           $taskId = $matches[1]
           Write-Host "Extracted TaskID: $taskId"
           Write-Output "##vso[task.setvariable variable=EXTRACTED_PACKAGE_NAME isOutput=true]$taskId"
-          # Also write to a file for other stages to read
-          $taskId | Out-File -FilePath "$(Build.ArtifactStagingDirectory)/taskid.txt" -NoNewline -Force
         } else {
           Write-Error "TaskID not found in commit message. Commit message must contain 'TaskID: <value>'"
           exit 1
         }
-      displayName: 'Extract TaskID from Commit Message'
+        
+        # Extract WorkItemId for deployment scheduling
+        if ($commitMessage -match "WorkItemId:\s*'(\d+)'") {
+          $workItemId = $matches[1]
+          Write-Host "Extracted WorkItemId: $workItemId"
+          Write-Output "##vso[task.setvariable variable=WORK_ITEM_ID isOutput=true]$workItemId"
+        } else {
+          Write-Host "Warning: WorkItemId not found in commit message. Format should be: WorkItemId: '51'" -ForegroundColor Yellow
+          Write-Output "##vso[task.setvariable variable=WORK_ITEM_ID isOutput=true]"
+        }
+        
+        # Save both to files for other stages to read
+        $taskId | Out-File -FilePath "$(Build.ArtifactStagingDirectory)/taskid.txt" -NoNewline -Force
+        $workItemId | Out-File -FilePath "$(Build.ArtifactStagingDirectory)/workitemid.txt" -NoNewline -Force
+      displayName: 'Extract TaskID and WorkItemId from Commit Message'
       name: ExtractTaskId
     
     - publish: $(Build.ArtifactStagingDirectory)/taskid.txt
       artifact: taskid-artifact
       displayName: 'Publish TaskID Artifact'
+    
+    - publish: $(Build.ArtifactStagingDirectory)/workitemid.txt
+      artifact: workitemid-artifact
+      displayName: 'Publish WorkItemId Artifact'
 
 - stage: CreatePackage
   displayName: 'Create DBmaestro Package'
@@ -267,18 +284,31 @@ stages:
     dependsOn: ApprovalForDeployment
     timeoutInMinutes: 10
     steps:
+    - download: current
+      artifact: workitemid-artifact
+      displayName: 'Download WorkItemId Artifact'
+    
     - powershell: |
-        # Get approval details from Azure DevOps REST API using Pipelines API environment expansion
+        # Extract WorkItemId from artifact to get work item for deployment schedule
+        $workItemIdContent = Get-Content "$(Pipeline.Workspace)/workitemid-artifact/workitemid.txt" -Raw
+        $workItemId = $workItemIdContent.Trim()
+        
+        if ([string]::IsNullOrWhiteSpace($workItemId)) {
+          Write-Host "Warning: WorkItemId is empty. Using default scheduling behavior." -ForegroundColor Yellow
+          Write-Output "##vso[task.setvariable variable=DEPLOYMENT_DATE_PROVIDED]false"
+          exit 0
+        }
+        
+        Write-Host "Work Item ID: $workItemId"
+        
+        # Get deployment schedule from work item description
         $orgUrl = "$(System.CollectionUri)"
         $project = "$(System.TeamProject)"
-        # pipelineId for REST call (use DefinitionId) and runId is Build.BuildId
-        $pipelineId = "$(System.DefinitionId)"
-        $runId = "$(Build.BuildId)"
         $pat = "$(ADO_PAT)"
         
         if ([string]::IsNullOrWhiteSpace($pat)) {
-          Write-Host "Warning: ADO_PAT not set. Cannot retrieve approval comments." -ForegroundColor Yellow
-          Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]false"
+          Write-Host "Warning: ADO_PAT not set. Cannot retrieve work item details." -ForegroundColor Yellow
+          Write-Output "##vso[task.setvariable variable=DEPLOYMENT_DATE_PROVIDED]false"
           exit 0
         }
         
@@ -288,86 +318,46 @@ stages:
         }
         
         try {
-          $datePattern = '\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}'
-          # First, try to use the Pipelines API with environment expand
-          $pipelineUri = "$orgUrl$project/_apis/pipelines/$pipelineId/runs/$runId" + "?api-version=7.1-preview.1&`$expand=environment"
-          Write-Host "Querying pipeline run for environment details: $pipelineUri"
-          $pipelineRun = Invoke-RestMethod -Uri $pipelineUri -Method Get -Headers $headers -ErrorAction SilentlyContinue
-
-          $found = $false
-          if ($pipelineRun -and $pipelineRun.environments) {
-            foreach ($env in $pipelineRun.environments) {
-              # Match using environment name or resource.environment.name where available
-              $envName = $null
-              if ($env.name) { $envName = $env.name }
-              elseif ($env.resource -and $env.resource.environment -and $env.resource.environment.name) { $envName = $env.resource.environment.name }
-
-              if ($envName -and ($envName -eq "$(DBM_ENV_NAME_PROD)" -or $envName -like "*$(DBM_ENV_NAME_PROD)*")) {
-                # iterate deploySteps -> operationStatus
-                Write-Host "Inspecting environment: $envName"
-                foreach ($deployStep in ($env.deploySteps | Where-Object { $_ -ne $null })) {
-                  foreach ($op in ($deployStep.operationStatus | Where-Object { $_ -ne $null })) {
-                    if ($op.comments) {
-                      Write-Host "Found operation comments: $($op.comments)"
-                      if ($op.comments -match $datePattern) {
-                        $extractedDate = $matches[0]
-                        try {
-                          $parsedDate = [DateTime]::Parse($extractedDate)
-                          Write-Host "Extracted date from operationStatus comments: $extractedDate" -ForegroundColor Green
-                          Write-Output "##vso[task.setvariable variable=TargetDeploymentDate]$extractedDate"
-                          Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]true"
-                          $found = $true
-                          break
-                        } catch {
-                          Write-Host "Warning: Could not parse extracted date from operationStatus comments." -ForegroundColor Yellow
-                        }
-                      }
-                    }
-                  }
-                  if ($found) { break }
-                }
-                if ($found) { break }
+          # Retrieve work item
+          $wiUri = "$orgUrl`_apis/wit/workitems/$workItemId" + "?api-version=7.0"
+          Write-Host "Querying work item: $wiUri"
+          $workItem = Invoke-RestMethod -Uri $wiUri -Method Get -Headers $headers -ErrorAction Stop
+          
+          Write-Host "Work Item: $($workItem.fields.'System.Title')" -ForegroundColor Green
+          
+          $description = $workItem.fields.'System.Description'
+          if ($description) {
+            Write-Host "Description found, parsing for deployment date..."
+            
+            # Remove HTML tags
+            $cleanDescription = $description -replace '<[^>]+>', ''
+            
+            # Look for TargetDeploymentDate pattern
+            $datePattern = "TargetDeploymentDate\s*:\s*'([^']+)'"
+            if ($cleanDescription -match $datePattern) {
+              $extractedDate = $matches[1]
+              try {
+                $parsedDate = [DateTime]::Parse($extractedDate)
+                Write-Host "Extracted deployment date from work item: $extractedDate" -ForegroundColor Green
+                Write-Output "##vso[task.setvariable variable=TargetDeploymentDate]$extractedDate"
+                Write-Output "##vso[task.setvariable variable=DEPLOYMENT_DATE_PROVIDED]true"
+              } catch {
+                Write-Host "Warning: Could not parse extracted date '$extractedDate'." -ForegroundColor Yellow
+                Write-Output "##vso[task.setvariable variable=DEPLOYMENT_DATE_PROVIDED]false"
               }
+            } else {
+              Write-Host "TargetDeploymentDate not found in work item description; using default scheduling behavior." -ForegroundColor Cyan
+              Write-Output "##vso[task.setvariable variable=DEPLOYMENT_DATE_PROVIDED]false"
             }
-          }
-
-          # Fallback to timeline logs if env-based extraction not found or not available
-          if (-not $found) {
-            Write-Host "No environment comment date found via Pipelines API. Falling back to build timeline logs..." -ForegroundColor Yellow
-            $timelineUri = "$orgUrl$project/_apis/build/builds/$runId/timeline?api-version=7.0"
-            Write-Host "Querying build timeline: $timelineUri"
-            $timeline = Invoke-RestMethod -Uri $timelineUri -Method Get -Headers $headers -ErrorAction SilentlyContinue
-            if ($timeline -and $timeline.records) {
-              $approvalRecord = $timeline.records | Where-Object { $_.type -eq 'Task' -and $_.name -like '*Approval*' -and $_.result -eq 'succeeded' } | Select-Object -First 1
-              if ($approvalRecord -and $approvalRecord.log -and $approvalRecord.log.id -gt 0) {
-                $logUrl = "$orgUrl$project/_apis/build/builds/$runId/logs/$($approvalRecord.log.id)/lines?startLine=1&endLine=200&api-version=7.0"
-                Write-Host "Retrieving approval log lines: $logUrl"
-                $logLines = Invoke-RestMethod -Uri $logUrl -Method Get -Headers $headers -ErrorAction SilentlyContinue
-                if ($logLines -match $datePattern) {
-                  $extractedDate = $matches[0]
-                  try {
-                    $parsedDate = [DateTime]::Parse($extractedDate)
-                    Write-Host "Extracted date from log content: $extractedDate" -ForegroundColor Green
-                    Write-Output "##vso[task.setvariable variable=TargetDeploymentDate]$extractedDate"
-                    Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]true"
-                    $found = $true
-                  } catch {
-                    Write-Host "Warning: Could not parse extracted date from log content." -ForegroundColor Yellow
-                  }
-                }
-              }
-            }
-
-            if (-not $found) {
-              Write-Host "No date found in timeline logs either; using default scheduling behavior." -ForegroundColor Cyan
-              Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]false"
-            }
+          } else {
+            Write-Host "No description found in work item; using default scheduling behavior." -ForegroundColor Cyan
+            Write-Output "##vso[task.setvariable variable=DEPLOYMENT_DATE_PROVIDED]false"
           }
         } catch {
-          Write-Host "Warning: Error while retrieving approval details: $($_.Exception.Message)" -ForegroundColor Yellow
-          Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]false"
+          Write-Host "Warning: Error while retrieving work item details: $($_.Exception.Message)" -ForegroundColor Yellow
+          Write-Output "##vso[task.setvariable variable=DEPLOYMENT_DATE_PROVIDED]false"
         }
-      displayName: 'Extract Deployment Date from Approval Comments'
+      displayName: 'Extract Deployment Date from Work Item'
   
   - job: ScheduleUpgrade
     displayName: 'Schedule Production Upgrade'
