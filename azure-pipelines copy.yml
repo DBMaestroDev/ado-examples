@@ -1,0 +1,534 @@
+trigger: none
+
+name: DBmaestro Pipeline
+
+resources:
+  repositories:
+    - repository: ado-source-control
+      type: git
+      name: 'ado-source-control'  # Format: 'ProjectName/RepoName'
+      trigger:
+        branches:
+          include:
+          - main
+          - develop
+pool:
+  name: NicolasHosted
+
+variables:
+  - group: DBmaestro-Credentials
+  - name: packageName
+    value: '$(Build.Repository.Name)-$(Build.BuildNumber)'
+  - name: DBM_JAR_PATH
+    value: 'C:\Program Files (x86)\DBmaestro\DOP Server\Agent\DBmaestroAgent.jar'
+  - name: DBM_AGENT_ENDPOINT
+    value: 'localhost:8017'
+  - name: DBM_ENV_NAME_DEV
+    value: 'DEV_USER'
+  - name: DBM_ENV_NAME_RS
+    value: 'INTEGRACION'
+  - name: DBM_ENV_NAME_QA
+    value: 'QAS'
+  - name: DBM_ENV_NAME_PROD
+    value: 'PRD'
+  - name: DBM_PROJECT_NAME
+    value: 'Demo-MSSQL'
+  - name: DBM_AUTH_TYPE
+    value: 'DBmaestroAccount'
+
+stages:
+- stage: ExtractTaskID
+  displayName: 'Extract TaskID from Commit Message'
+  jobs:
+  - job: TaskIDExtraction
+    displayName: 'Extract TaskID'
+    steps:
+    - powershell: |
+        # Extract TaskID from commit message
+        $commitMessage = "$(Build.SourceVersionMessage)"
+        Write-Host "Commit Message: $commitMessage"
+        
+        if ($commitMessage -match 'TaskID:\s*([A-Za-z0-9_-]+)') {
+          $taskId = $matches[1]
+          Write-Host "Extracted TaskID: $taskId"
+          Write-Output "##vso[task.setvariable variable=EXTRACTED_PACKAGE_NAME isOutput=true]$taskId"
+          # Also write to a file for other stages to read
+          $taskId | Out-File -FilePath "$(Build.ArtifactStagingDirectory)/taskid.txt" -NoNewline -Force
+        } else {
+          Write-Error "TaskID not found in commit message. Commit message must contain 'TaskID: <value>'"
+          exit 1
+        }
+      displayName: 'Extract TaskID from Commit Message'
+      name: ExtractTaskId
+    
+    - publish: $(Build.ArtifactStagingDirectory)/taskid.txt
+      artifact: taskid-artifact
+      displayName: 'Publish TaskID Artifact'
+
+- stage: CreatePackage
+  displayName: 'Create DBmaestro Package'
+  dependsOn:
+  - ExtractTaskID
+  condition: succeeded()
+  jobs:
+  - job: PackageCreation
+    displayName: 'Create Package'
+    steps:
+    - download: current
+      artifact: taskid-artifact
+      displayName: 'Download TaskID Artifact'
+    
+    - powershell: |
+        $taskIdContent = Get-Content "$(Pipeline.Workspace)/taskid-artifact/taskid.txt" -Raw
+        $taskId = $taskIdContent.Trim()
+        Write-Host "Read TaskID from artifact: $taskId"
+        Write-Output "##vso[task.setvariable variable=EXTRACTED_PACKAGE_NAME]$taskId"
+      displayName: 'Load TaskID from Artifact'
+    
+    - script: |
+        echo Package Name: $(EXTRACTED_PACKAGE_NAME)
+        echo Build ID: $(Build.BuildId)
+        echo Repository: $(Build.Repository.Name)
+      displayName: 'Display Build Information'
+    
+    - powershell: |
+        Write-Host "Debug - EXTRACTED_PACKAGE_NAME variable: $(EXTRACTED_PACKAGE_NAME)"
+        if ([string]::IsNullOrWhiteSpace("$(EXTRACTED_PACKAGE_NAME)")) {
+          Write-Error "EXTRACTED_PACKAGE_NAME is empty!"
+          exit 1
+        }
+      displayName: 'Validate Package Name'
+    
+    - powershell: |
+        java -jar "$(DBM_JAR_PATH)" -Build `
+          -ProjectName "$(DBM_PROJECT_NAME)" `
+          -EnvName "$(DBM_ENV_NAME_DEV)" `
+          -VersionType "Tasks" `
+          -AdditionalInformation "$(EXTRACTED_PACKAGE_NAME)" `
+          -CreatePackage True `
+          -CreateDowngradeScripts True `
+          -PackageName "$(EXTRACTED_PACKAGE_NAME)" `
+          -Server "$(DBM_AGENT_ENDPOINT)" `
+          -AuthType "$(DBM_AUTH_TYPE)" `
+          -UserName "$(DBMUsername)" `
+          -Password "$(DBMPassword)"
+      displayName: 'Create DBmaestro Package'
+
+- stage: RunPrecheck
+  displayName: 'Run DBmaestro Precheck'
+  dependsOn:
+  - CreatePackage
+  condition: succeeded()
+  jobs:
+  - job: PrecheckValidation
+    displayName: 'Validate Package'
+    steps:
+    - download: current
+      artifact: taskid-artifact
+      displayName: 'Download TaskID Artifact'
+    
+    - powershell: |
+        $taskIdContent = Get-Content "$(Pipeline.Workspace)/taskid-artifact/taskid.txt" -Raw
+        $taskId = $taskIdContent.Trim()
+        Write-Host "Read TaskID from artifact: $taskId"
+        Write-Output "##vso[task.setvariable variable=EXTRACTED_PACKAGE_NAME]$taskId"
+      displayName: 'Load TaskID from Artifact'
+    
+    - powershell: |
+        java -jar "$(DBM_JAR_PATH)" -PreCheck `
+          -ProjectName "$(DBM_PROJECT_NAME)" `
+          -Server "$(DBM_AGENT_ENDPOINT)" `
+          -PackageName "$(EXTRACTED_PACKAGE_NAME)" `
+          -AuthType "$(DBM_AUTH_TYPE)" `
+          -UserName "$(DBMUsername)" `
+          -Password "$(DBMPassword)"
+      displayName: 'Run DBmaestro Precheck'
+
+- stage: UpgradeINTEGRACION
+  displayName: 'Upgrade INTEGRACION Environment'
+  dependsOn:
+  - RunPrecheck
+  condition: succeeded()
+  jobs:
+  - job: DeployToINTEGRACION
+    displayName: 'Deploy Package to INTEGRACION'
+    steps:
+    - download: current
+      artifact: taskid-artifact
+      displayName: 'Download TaskID Artifact'
+    
+    - powershell: |
+        $taskIdContent = Get-Content "$(Pipeline.Workspace)/taskid-artifact/taskid.txt" -Raw
+        $taskId = $taskIdContent.Trim()
+        Write-Host "Read TaskID from artifact: $taskId"
+        Write-Output "##vso[task.setvariable variable=EXTRACTED_PACKAGE_NAME]$taskId"
+      displayName: 'Load TaskID from Artifact'
+    
+    - powershell: |
+        java -jar "$(DBM_JAR_PATH)" -Upgrade `
+          -ProjectName "$(DBM_PROJECT_NAME)" `
+          -EnvName "$(DBM_ENV_NAME_RS)" `
+          -PackageName "$(EXTRACTED_PACKAGE_NAME)" `
+          -BackupBehavior True `
+          -RestoreBehavior True `
+          -Server "$(DBM_AGENT_ENDPOINT)" `
+          -AuthType "$(DBM_AUTH_TYPE)" `
+          -UserName "$(DBMUsername)" `
+          -Password "$(DBMPassword)"
+      displayName: 'Upgrade INTEGRACION Environment'
+    
+    - script: |
+        echo Deployment Summary:
+        echo Package: $(EXTRACTED_PACKAGE_NAME)
+        echo Environment: $(DBM_ENV_NAME_RS)
+        echo Status: SUCCESS
+      displayName: 'Display Deployment Summary'
+
+- stage: ApprovalForQAS
+  displayName: 'Approval: Proceed to QAS'
+  dependsOn:
+  - UpgradeINTEGRACION
+  condition: succeeded()
+  jobs:
+  - job: ApprovalJob
+    displayName: 'Manual Approval'
+    pool: server
+    timeoutInMinutes: 1440
+    steps:
+    - task: ManualValidation@0
+      inputs:
+        notifyUsers: 'nicolast@dbmaestro.com'
+        instructions: 'Please review the INTEGRACION deployment and approve to proceed with QAS upgrade.'
+        onTimeout: 'reject'
+
+- stage: UpgradeQAS
+  displayName: 'Upgrade QAS Environment'
+  dependsOn:
+  - ApprovalForQAS
+  condition: succeeded()
+  jobs:
+  - job: DeployToQAS
+    displayName: 'Deploy Package to QAS'
+    steps:
+    - download: current
+      artifact: taskid-artifact
+      displayName: 'Download TaskID Artifact'
+    
+    - powershell: |
+        $taskIdContent = Get-Content "$(Pipeline.Workspace)/taskid-artifact/taskid.txt" -Raw
+        $taskId = $taskIdContent.Trim()
+        Write-Host "Read TaskID from artifact: $taskId"
+        Write-Output "##vso[task.setvariable variable=EXTRACTED_PACKAGE_NAME]$taskId"
+      displayName: 'Load TaskID from Artifact'
+    
+    - powershell: |
+        java -jar "$(DBM_JAR_PATH)" -Upgrade `
+          -ProjectName "$(DBM_PROJECT_NAME)" `
+          -EnvName "$(DBM_ENV_NAME_QA)" `
+          -PackageName "$(EXTRACTED_PACKAGE_NAME)" `
+          -BackupBehavior True `
+          -RestoreBehavior True `
+          -Server "$(DBM_AGENT_ENDPOINT)" `
+          -AuthType "$(DBM_AUTH_TYPE)" `
+          -UserName "$(DBMUsername)" `
+          -Password "$(DBMPassword)"
+      displayName: 'Upgrade QAS Environment'
+    
+    - script: |
+        echo Deployment Summary:
+        echo Package: $(EXTRACTED_PACKAGE_NAME)
+        echo Environment: $(DBM_ENV_NAME_QA)
+        echo Status: SUCCESS
+      displayName: 'Display QAS Deployment Summary'
+
+- stage: SchedulePRDUpgrade
+  displayName: 'Schedule PRD Upgrade'
+  dependsOn:
+  - UpgradeQAS
+  condition: succeeded()
+  jobs:
+  - job: ApprovalForDeployment
+    displayName: 'Approval: Production Deployment'
+    pool: server
+    timeoutInMinutes: 1440
+    steps:
+    - task: ManualValidation@0
+      inputs:
+        notifyUsers: 'nicolast@dbmaestro.com'
+        instructions: 'QAS deployment completed successfully. Please review and approve to proceed with production deployment scheduling. Optional: In the approval comments, enter deployment date in format: YYYY-MM-DD HH:MM:SS UTC (e.g., 2025-11-18 14:30:00). Leave blank to use default (5 minutes from execution). Note: All times are in UTC/Coordinated Universal Time.'
+        onTimeout: 'reject'
+  
+  - job: SetDeploymentTime
+    displayName: 'Set Production Deployment Time'
+    dependsOn: ApprovalForDeployment
+    timeoutInMinutes: 10
+    steps:
+    - powershell: |
+        # Get approval details from Azure DevOps REST API
+        $orgUrl = "$(System.CollectionUri)"
+        $project = "$(System.TeamProject)"
+        $buildId = "$(Build.BuildId)"
+        $pat = "$(ADO_PAT)"
+        
+        if ([string]::IsNullOrWhiteSpace($pat)) {
+          Write-Host "Warning: ADO_PAT not set. Cannot retrieve approval comments." -ForegroundColor Yellow
+          Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]false"
+          exit 0
+        }
+        
+        $headers = @{
+          Authorization = "Bearer $pat"
+          "Content-Type" = "application/json"
+        }
+        
+        try {
+          # Get timeline records to find the ManualValidation approval step
+          $uri = "$orgUrl$project/_apis/build/builds/$buildId/timeline?api-version=6.0"
+          Write-Host "Querying build timeline: $uri"
+          $response = Invoke-RestMethod -Uri $uri -Method Get -Headers $headers
+          
+          # Find the approval record and extract comments
+          $approvalRecord = $response.records | Where-Object { $_.type -eq "Task" -and $_.name -like "*Approval*" -and $_.result -eq "succeeded" } | Select-Object -First 1
+          
+          if ($approvalRecord) {
+            $approvalTime = $approvalRecord.finishTime
+            Write-Host "Found approval completed at: $approvalTime"
+            
+            # Get the log for the approval step to extract comments
+            $logUrl = "$orgUrl$project/_apis/build/builds/$buildId/logs/$($approvalRecord.logId)?api-version=6.0"
+            Write-Host "Retrieving approval log: $logUrl"
+            $logContent = Invoke-RestMethod -Uri $logUrl -Method Get -Headers $headers
+            
+            # Try to extract date from log content (comments may be in the log)
+            $datePattern = '\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}'
+            if ($logContent -match $datePattern) {
+              $extractedDate = $matches[0]
+              Write-Host "Extracted date from approval comments: $extractedDate" -ForegroundColor Green
+              
+              try {
+                $parsedDate = [DateTime]::Parse($extractedDate)
+                Write-Output "##vso[task.setvariable variable=TargetDeploymentDate]$extractedDate"
+                Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]true"
+              } catch {
+                Write-Host "Warning: Could not parse extracted date. Using default." -ForegroundColor Yellow
+                Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]false"
+              }
+            } else {
+              Write-Host "No date found in approval comments. Will use default or existing TargetDeploymentDate." -ForegroundColor Cyan
+              Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]false"
+            }
+          } else {
+            Write-Host "Approval record not found in timeline." -ForegroundColor Yellow
+            Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]false"
+          }
+        } catch {
+          Write-Host "Warning: Could not retrieve approval details: $($_.Exception.Message)" -ForegroundColor Yellow
+          Write-Output "##vso[task.setvariable variable=APPROVAL_DATE_PROVIDED]false"
+        }
+      displayName: 'Extract Deployment Date from Approval Comments'
+  
+  - job: ScheduleUpgrade
+    displayName: 'Schedule Production Upgrade'
+    dependsOn: SetDeploymentTime
+    steps:
+    - checkout: self
+      persistCredentials: true
+      displayName: 'Checkout Repository'
+    
+    - download: current
+      artifact: taskid-artifact
+      displayName: 'Download TaskID Artifact'
+    
+    - powershell: |
+        $taskIdContent = Get-Content "$(Pipeline.Workspace)/taskid-artifact/taskid.txt" -Raw
+        $taskId = $taskIdContent.Trim()
+        Write-Host "Read TaskID from artifact: $taskId"
+        Write-Output "##vso[task.setvariable variable=EXTRACTED_PACKAGE_NAME]$taskId"
+      displayName: 'Load TaskID from Artifact'
+    
+    - powershell: |
+        $packageName = "$(EXTRACTED_PACKAGE_NAME)"
+        
+        # Check if custom date provided via pipeline variable, otherwise use default
+        $targetDateInput = "$(TargetDeploymentDate)"
+        
+        if ([string]::IsNullOrWhiteSpace($targetDateInput)) {
+          # Default: 5 minutes from now
+          $targetDate = (Get-Date).AddMinutes(5)
+          Write-Host "No custom date provided. Using default: $targetDate"
+        } else {
+          try {
+            $targetDate = [DateTime]::Parse($targetDateInput)
+            Write-Host "Using custom deployment date: $targetDate"
+          } catch {
+            Write-Host "Failed to parse custom date '$targetDateInput'. Using default."
+            $targetDate = (Get-Date).AddMinutes(5)
+          }
+        }
+        
+        $cronSchedule = "$($targetDate.Minute) $($targetDate.Hour) $($targetDate.Day) $($targetDate.Month) *"
+        Write-Host "Package: $packageName"
+        Write-Host "Scheduled deployment time: $targetDate"
+        Write-Host "Cron schedule: $cronSchedule"
+        Write-Host ""
+        
+        # Read template
+        $templatePath = "$(Build.SourcesDirectory)/deploy-prd-template.yml"
+        if (-not (Test-Path $templatePath)) {
+          Write-Error "Template file not found: $templatePath"
+          exit 1
+        }
+        
+        $template = Get-Content $templatePath -Raw
+        
+        # Replace placeholders
+        $customPipeline = $template `
+          -replace 'CRON_SCHEDULE_PLACEHOLDER', $cronSchedule `
+          -replace 'PACKAGE_NAME_PLACEHOLDER', $packageName
+        
+        # Save as new file
+        $pipelineFileName = "deploy-prd-$packageName.yml"
+        $pipelinePath = "$(Build.SourcesDirectory)/$pipelineFileName"
+        $customPipeline | Out-File -FilePath $pipelinePath -Encoding UTF8 -Force
+        
+        Write-Host "Created pipeline file: $pipelineFileName"
+        Write-Host "Pipeline path: $pipelinePath"
+        Write-Output "##vso[task.setvariable variable=PIPELINE_FILE_NAME]$pipelineFileName"
+        Write-Output "##vso[task.setvariable variable=TARGET_DATE]$($targetDate.ToString('yyyy-MM-dd HH:mm:ss'))"
+      displayName: 'Create Custom Production Pipeline'
+    
+    - powershell: |
+        # Commit and push the new pipeline file
+        cd "$(Build.SourcesDirectory)"
+        
+        git config user.email "azure-pipeline@dbmaestro.com"
+        git config user.name "Azure DevOps Pipeline"
+        
+        # Fetch latest and checkout main branch
+        git fetch origin
+        git checkout -B main origin/main
+        
+        git add "$(PIPELINE_FILE_NAME)"
+        git commit -m "Add scheduled production deployment for $(EXTRACTED_PACKAGE_NAME) [skip ci]"
+        
+        if ($LASTEXITCODE -ne 0) {
+          Write-Error "Git commit failed with exit code $LASTEXITCODE"
+          Write-Error "Build Service account may not have 'Contribute' permission. See README.md for setup instructions."
+          exit 1
+        }
+        
+        git push origin main
+        
+        if ($LASTEXITCODE -ne 0) {
+          Write-Error "Git push failed with exit code $LASTEXITCODE"
+          Write-Error "Build Service account may not have 'Contribute' permission. See README.md for setup instructions."
+          exit 1
+        }
+        
+        Write-Host "Pipeline file committed and pushed to repository"
+        Write-Output "##vso[task.setvariable variable=GIT_COMMIT_SUCCESS]true"
+      displayName: 'Commit Pipeline File to Repository'
+      env:
+        SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+    
+    - powershell: |
+        # Get the repository ID via REST API using the repository name
+        $orgUrl = "$(System.CollectionUri)"
+        $project = "$(System.TeamProject)"
+        $repoName = "ado-examples"
+        $pat = "$(ADO_PAT)"
+        
+        $headers = @{
+          Authorization = "Bearer $pat"
+          "Content-Type" = "application/json"
+        }
+        
+        try {
+          $uri = "$orgUrl$project/_apis/git/repositories/$repoName`?api-version=7.0"
+          Write-Host "Querying repository: $uri"
+          $response = Invoke-RestMethod -Uri $uri -Method Get -Headers $headers
+          $repoId = $response.id
+          
+          Write-Host "Repository ID for '$repoName': $repoId"
+          Write-Output "##vso[task.setvariable variable=CURRENT_REPO_ID]$repoId"
+        } catch {
+          Write-Error "Failed to get repository ID: $($_.Exception.Message)"
+          exit 1
+        }
+      displayName: 'Get Current Repository ID'
+    
+    - powershell: |
+        # Wait for Azure DevOps to detect the new file
+        Write-Host "Waiting for Azure DevOps to index the new pipeline file..."
+        Start-Sleep -Seconds 10
+        
+        # Verify git commit was successful
+        if ("$(GIT_COMMIT_SUCCESS)" -ne "true") {
+          Write-Error "Git commit failed. Pipeline file not pushed to repository. Cannot register pipeline."
+          exit 1
+        }
+        
+        # Create pipeline via REST API
+        $orgUrl = "$(System.CollectionUri)"
+        $project = "$(System.TeamProject)"
+        $pat = "$(ADO_PAT)"
+        
+        $headers = @{
+          Authorization = "Bearer $pat"
+          "Content-Type" = "application/json"
+        }
+        
+        $pipelineName = "Deploy-PRD-$(EXTRACTED_PACKAGE_NAME)"
+        $body = @{
+          configuration = @{
+            type = "yaml"
+            path = "/$(PIPELINE_FILE_NAME)"
+            repository = @{
+              id = "$(CURRENT_REPO_ID)"
+              type = "azureReposGit"
+            }
+          }
+          folder = "Production Deployments"
+        } | ConvertTo-Json -Depth 10
+        
+        Write-Host "Creating pipeline: $pipelineName"
+        Write-Host "YAML path: /$(PIPELINE_FILE_NAME)"
+        Write-Host "Request body:"
+        Write-Host $body
+        
+        try {
+          $uri = "$orgUrl$project/_apis/pipelines?api-version=7.1-preview.1"
+          Write-Host "API URI: $uri"
+          $response = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -Body $body
+          
+          Write-Host ""
+          Write-Host "=== Pipeline Created Successfully ===" -ForegroundColor Green
+          Write-Host "Pipeline ID: $($response.id)"
+          Write-Host "Pipeline Name: $($response.name)"
+          Write-Host "Pipeline URL: $($response._links.web.href)"
+          Write-Host ""
+          Write-Host "Scheduled deployment: $(TARGET_DATE)"
+          Write-Host "Package: $(EXTRACTED_PACKAGE_NAME)"
+          Write-Host "Target Environment: PRD"
+          Write-Host ""
+          Write-Host "The pipeline will automatically run at the scheduled time."
+          
+        } catch {
+          Write-Error "Failed to create pipeline: $($_.Exception.Message)"
+          Write-Error "Response: $($_.Exception.Response)"
+          Write-Error "Status Code: $($_.Exception.Response.StatusCode)"
+          exit 1
+        }
+      displayName: 'Register Pipeline in Azure DevOps'
+    
+    - script: |
+        echo ===================================
+        echo Production Upgrade Scheduled
+        echo ===================================
+        echo Package: $(EXTRACTED_PACKAGE_NAME)
+        echo Target Environment: $(DBM_ENV_NAME_PROD)
+        echo Scheduled Time: $(TARGET_DATE)
+        echo Status: SCHEDULED (Automatic execution)
+        echo ===================================
+      displayName: 'Display Schedule Summary'
+
