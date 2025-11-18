@@ -1,5 +1,5 @@
 ﻿schedules:
-- cron: "20 13 18 11 *"
+- cron: "35 13 18 11 *"
   displayName: Production deployment for ISSUE-108
   branches:
     include:
