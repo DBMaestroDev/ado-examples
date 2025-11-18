@@ -58,13 +58,13 @@ stages:
           exit 1
         }
         
-        # Extract WorkItemId for deployment scheduling
-        if ($commitMessage -match "WorkItemId:\s*'(\d+)'") {
+        # Extract WorkItemId for deployment scheduling (case-insensitive, supports single quotes, double quotes, or no quotes)
+        if ($commitMessage -match "(?i)workitem(?:id)?:\s*['\"]?(\d+)['\"]?") {
           $workItemId = $matches[1]
           Write-Host "Extracted WorkItemId: $workItemId"
           Write-Output "##vso[task.setvariable variable=WORK_ITEM_ID isOutput=true]$workItemId"
         } else {
-          Write-Host "Warning: WorkItemId not found in commit message. Format should be: WorkItemId: '51'" -ForegroundColor Yellow
+          Write-Host "Warning: WorkItemId not found in commit message. Supported formats: WorkItemId: 51, WorkItemId: '51', WorkItemId: \"51\", workitemid: 51, workitem: '51'" -ForegroundColor Yellow
           Write-Output "##vso[task.setvariable variable=WORK_ITEM_ID isOutput=true]"
         }
         
