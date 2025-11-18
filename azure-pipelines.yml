@@ -290,7 +290,7 @@ stages:
         try {
           $datePattern = '\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}'
           # First, try to use the Pipelines API with environment expand
-          $pipelineUri = "$orgUrl$project/_apis/pipelines/$pipelineId/runs/$runId?api-version=7.1-preview.1&`$expand=environment"
+          $pipelineUri = "$orgUrl$project/_apis/pipelines/$pipelineId/runs/$runId" + "?api-version=7.1-preview.1&`$expand=environment"
           Write-Host "Querying pipeline run for environment details: $pipelineUri"
           $pipelineRun = Invoke-RestMethod -Uri $pipelineUri -Method Get -Headers $headers -ErrorAction SilentlyContinue
 
