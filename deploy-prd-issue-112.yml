@@ -1,5 +1,5 @@
 ﻿schedules:
-- cron: "20 13 18 11 *"
+- cron: "05 14 18 11 *"
   displayName: Production deployment for issue-112
   branches:
     include:
