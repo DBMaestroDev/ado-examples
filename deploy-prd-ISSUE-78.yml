@@ -9,7 +9,7 @@
 trigger: none
 
 pool:
-  name: NicolasHosted
+  name: AdoHosted
 
 variables:
   DBM_JAR_PATH: 'C:\Program Files (x86)\DBmaestro\DOP Server\Agent\DBmaestroAgent.jar'

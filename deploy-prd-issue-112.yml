@@ -11,7 +11,7 @@ trigger: none
 name: DBmaestro Production Deployment - issue-112
 
 pool:
-  name: NicolasHosted
+  name: AdoHosted
 
 variables:
   - group: DBmaestro-Credentials

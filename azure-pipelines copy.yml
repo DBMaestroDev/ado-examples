@@ -13,7 +13,7 @@ resources:
           - main
           - develop
 pool:
-  name: NicolasHosted
+  name: AdoHosted
 
 variables:
   - group: DBmaestro-Credentials
@@ -197,7 +197,7 @@ stages:
     steps:
     - task: ManualValidation@0
       inputs:
-        notifyUsers: 'nicolast@dbmaestro.com'
+        notifyUsers: 'AdoUser@dbmaestro.local'
         instructions: 'Please review the INTEGRACION deployment and approve to proceed with QAS upgrade.'
         onTimeout: 'reject'
 
@@ -254,7 +254,7 @@ stages:
     steps:
     - task: ManualValidation@0
       inputs:
-        notifyUsers: 'nicolast@dbmaestro.com'
+        notifyUsers: 'AdoUser@dbmaestro.local'
         instructions: 'QAS deployment completed successfully. Please review and approve to proceed with production deployment scheduling. Optional: In the approval comments, enter deployment date in format: YYYY-MM-DD HH:MM:SS UTC (e.g., 2025-11-18 14:30:00). Leave blank to use default (5 minutes from execution). Note: All times are in UTC/Coordinated Universal Time.'
         onTimeout: 'reject'
   

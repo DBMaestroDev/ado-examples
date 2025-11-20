@@ -13,7 +13,7 @@ resources:
           - main
           - develop
 pool:
-  name: NicolasHosted
+  name: AdoHosted
 
 variables:
   - group: DBmaestro-Credentials
@@ -214,7 +214,7 @@ stages:
     steps:
     - task: ManualValidation@0
       inputs:
-        notifyUsers: 'nicolast@dbmaestro.com'
+        notifyUsers: 'AdoUser@dbmaestro.local'
         instructions: 'Please review the INTEGRACION deployment and approve to proceed with QAS upgrade.'
         onTimeout: 'reject'
 
@@ -268,7 +268,7 @@ stages:
     displayName: 'Approval: Production Deployment (Environment-based)'
     environment: '$(DBM_ENV_NAME_PROD)'
     pool:
-      name: NicolasHosted
+      name: AdoHosted
     timeoutInMinutes: 1440
     strategy:
       runOnce:

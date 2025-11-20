@@ -29,7 +29,7 @@ The `azure-pipelines.yml` implements a comprehensive deployment orchestration wi
 
 5. **ApprovalForQAS**: Manual approval gate
    - Requires approval before QAS deployment
-   - Notifies: nicolast@dbmaestro.com
+   - Notifies: AdoUser@dbmaestro.local
    - Timeout: 24 hours
 
 6. **UpgradeQAS**: Deploys to QAS
@@ -46,7 +46,7 @@ The `azure-pipelines.yml` implements a comprehensive deployment orchestration wi
 ### Prerequisites
 
 - Azure DevOps Project with `ado-examples` repository
-- Build agent pool: `NicolasHosted`
+- Build agent pool: `AdoHosted`
 - DBmaestro agent running on `localhost:8017`
 - **Git Repository Permissions**: Build service account must have `Contribute` and `Create Branch` permissions
 
@@ -122,7 +122,7 @@ The dynamically created production deployment scheduled pipelines require permis
 **Option 1: Authorize Individual Pipelines (Recommended for security)**
 
 1. In Azure DevOps, go to **Project Settings** → **Agent pools** (under Pipelines section)
-2. Click on **NicolasHosted** pool
+2. Click on **AdoHosted** pool
 3. Click the **Security** tab
 4. Click the **+** button to add a new pipeline
 5. Search for and select the **newly created production deployment pipeline** (e.g., "Deploy-PRD-ISSUE-93")
@@ -135,7 +135,7 @@ This grants permission to that specific pipeline to use the agent pool.
 If you have project-level permissions:
 
 1. In Azure DevOps, go to **Project Settings** → **Agent pools** (under Pipelines section)
-2. Click on **NicolasHosted** pool
+2. Click on **AdoHosted** pool
 3. Click the **Security** tab
 4. Look for a **"Make open"** or **"Allow all pipelines"** option (depending on your Azure DevOps version)
 5. Enable it to allow all pipelines in the project to use this agent pool
