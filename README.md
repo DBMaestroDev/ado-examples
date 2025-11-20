@@ -37,9 +37,10 @@ The `azure-pipelines.yml` implements a comprehensive deployment orchestration wi
    - Full deployment with backup/restore
 
 7. **SchedulePRDUpgrade**: Schedules production deployment
-   - Two jobs: manual approval + automated scheduling
-   - Creates dynamic pipeline with custom cron schedule
-   - Registers pipeline in "Production Deployments" folder
+   - Two jobs: environment approval + automated scheduling
+   - Retrieves deployment schedule from work item associated with TaskID
+   - Creates dynamic pipeline with calculated cron schedule
+   - Registers pipeline in \"Production Deployments\" folder
 
 ## Getting Started
 
@@ -71,13 +72,22 @@ TF401027: You need the Git 'GenericContribute' permission to perform this action
 
 ### Commit Requirements
 
-All commits must include TaskID in the commit message:
+All commits must include TaskID (and optionally WorkItemId) in the commit message:
 
 ```
 git commit -m "Your commit message TaskID: ISSUE-75"
 ```
 
+or with explicit WorkItemId reference:
+
+```
+git commit -m "Your commit message TaskID: ISSUE-75 WorkItemId: 12345"
+```
+
 Format: `TaskID: [A-Za-z0-9_-]+` anywhere in the commit message
+- TaskID is used as the package name
+- If WorkItemId is not explicitly provided, the TaskID is used to look up the corresponding work item
+- The work item's description is searched for `TargetDeploymentDate: 'YYYY-MM-DD HH:MM:SS'` to determine deployment schedule
 
 ### Variable Groups (Required Setup)
 
@@ -93,6 +103,10 @@ The pipelines require a **Variable Group** named `DBmaestro-Credentials` to stor
      - Click the **lock icon** to mark as secret
    - **DBMPassword**: Your DBmaestro service account password
      - Click the **lock icon** to mark as secret
+   - **ADO_PAT**: Personal Access Token for Azure DevOps API access
+     - Click the **lock icon** to mark as secret
+     - Required for retrieving work item details and deployment dates
+     - Must have permissions to read work items and create pipelines
 5. Click **"Save"**
 
 #### Important: Variable Group Access
@@ -152,35 +166,46 @@ This pipeline needs permission to access a resource before this run can continue
 #### From Variable Group (Secure)
 - `DBMUsername`: DBmaestro service account username (from `DBmaestro-Credentials`)
 - `DBMPassword`: DBmaestro service account password (from `DBmaestro-Credentials`)
+- `ADO_PAT`: Personal Access Token for Azure DevOps API access (from `DBmaestro-Credentials`)
 
-#### Optional (Set during approval stages)
-- `TargetDeploymentDate`: Custom production deployment time (format: `YYYY-MM-DD HH:MM:SS`)
-  - Example: `2025-11-17 14:30:00`
-  - Default if not specified: 5 minutes from approval
+#### Automatically Retrieved
+- `TargetDeploymentDate`: Extracted from work item description (parsed from `TargetDeploymentDate: 'YYYY-MM-DD HH:MM:SS'` format)
+  - Retrieved via the TaskID and WorkItemId embedded in the commit message
+  - If not found, defaults to 5 minutes from approval time
+  - Used to calculate cron expression for scheduled pipeline
 
 ## Scheduling Production Deployment
 
-### Automatic Scheduling (Default)
+### Automatic Scheduling (via Work Item)
 
-When the "Set Production Deployment Time" approval stage appears:
-- Approve without setting variables → uses default schedule (tomorrow at 2 AM)
-- Pipeline automatically creates a scheduled pipeline YAML file
-- New pipeline registers and executes at scheduled time
+When the TaskID is extracted from the commit message, the pipeline automatically:
 
-### Manual Scheduling (Custom Date/Time)
+1. **Retrieves the WorkItemId** from the commit message (TaskID used to link to work item)
+2. **Looks up the work item** in Azure DevOps via REST API
+3. **Searches the description** for: `TargetDeploymentDate: 'YYYY-MM-DD HH:MM:SS'`
+4. **Extracts the deployment date** from the work item description
+5. **Creates a scheduled pipeline** with the calculated cron expression
+6. **Registers and executes** the pipeline at the scheduled time
 
-When the "Set Production Deployment Time" approval stage appears:
+### Example Work Item Description Format
 
-1. **Click the approval notification** in Azure DevOps
-2. **Click the three dots menu (⋮)** at the top right
-3. **Select "Set variables"**
-4. **Add variable:**
-   - Variable name: `TargetDeploymentDate`
-   - Value: `2025-11-17 14:30:00` (YYYY-MM-DD HH:MM:SS format)
-5. **Click "Save"**
-6. **Click "Approve"**
+Add this to your Azure DevOps work item description:
 
-The pipeline will use your custom date/time instead of the default (5 minutes from approval).
+```
+Deployment Details:
+TargetDeploymentDate: '2025-11-17 14:30:00'
+Version: 1.0.0
+Approver: John Doe
+```
+
+The pipeline will parse and extract `2025-11-17 14:30:00` as the deployment time.
+
+### Default Behavior (No TargetDeploymentDate)
+
+If the work item doesn't contain `TargetDeploymentDate` in the description:
+- Pipeline proceeds to **ApprovalForDeployment** stage (environment-based approval)
+- After approval, defaults to **5 minutes from approval time**
+- Creates scheduled pipeline with this default timing
 
 ## Pipeline Details
 
@@ -221,15 +246,31 @@ The scheduling job performs these operations:
 | Stage | Purpose | Timeout | Action |
 |-------|---------|---------|--------|
 | ApprovalForQAS | Review Release Source deployment | 24 hours | Approve/Reject |
-| SetDeploymentTime | Confirm schedule for PRD | 24 hours | Approve (set time first) |
+| ApprovalForDeployment | Environment-based approval for PRD | 24 hours | Approve (environment checks enforce this) |
+
+The SetDeploymentTime stage automatically retrieves the deployment date from the work item description - no manual variable setting required.
 
 ## Artifact Passing
 
-Package name (TaskID) is passed between stages via artifact:
+Package name and deployment information is passed between stages via artifacts:
+
+### TaskID Artifact
 - **Published by**: ExtractTaskID stage
 - **Artifact name**: `taskid-artifact`
 - **File**: `taskid.txt`
-- **Used by**: All subsequent stages
+- **Used by**: CreatePackage, RunPrecheck, UpgradeINTEGRACION, UpgradeQAS, ScheduleUpgrade stages
+
+### WorkItemId Artifact
+- **Published by**: ExtractTaskID stage
+- **Artifact name**: `workitemid-artifact`
+- **File**: `workitemid.txt`
+- **Used by**: SetDeploymentTime stage to retrieve deployment schedule from work item description
+
+### DeploymentDate Artifact
+- **Published by**: SetDeploymentTime stage
+- **Artifact name**: `deploymentdate-artifact`
+- **File**: `deploymentdate.txt`
+- **Used by**: ScheduleUpgrade stage to apply the extracted deployment date to cron schedule
 
 ## Troubleshooting
 
@@ -245,9 +286,30 @@ git checkout -B main origin/main
 
 ### Custom deployment date not recognized
 
-**Solution**: Verify date format is exactly: `YYYY-MM-DD HH:MM:SS`
-- Correct: `2025-11-17 14:30:00`
-- Incorrect: `11/17/2025 2:30 PM`
+**Solution**: Verify the work item description contains the date in exactly this format: `TargetDeploymentDate: 'YYYY-MM-DD HH:MM:SS'`
+- Correct: `TargetDeploymentDate: '2025-11-17 14:30:00'`
+- Incorrect: `TargetDeploymentDate: 11/17/2025 2:30 PM`
+- Check that the format is surrounded by single quotes
+
+### Work item deployment date not being extracted
+
+**Error**: Pipeline defaults to 5 minutes instead of using work item date
+
+**Solution**: 
+1. Verify `ADO_PAT` is defined in the `DBmaestro-Credentials` variable group
+2. Ensure the work item description contains: `TargetDeploymentDate: 'YYYY-MM-DD HH:MM:SS'`
+3. Check that the Personal Access Token has permissions to read work items
+4. Verify the work item exists and is linked to the TaskID
+
+### Missing ADO_PAT variable
+
+**Error**: Pipeline skips work item lookup and uses default scheduling
+
+**Solution**: Add `ADO_PAT` to the `DBmaestro-Credentials` variable group:
+1. Go to **Pipelines** → **Library** → `DBmaestro-Credentials`
+2. Add variable: `ADO_PAT`
+3. Set value to your Personal Access Token with work item read permissions
+4. Mark as secret (click lock icon)
 
 ### Scheduled pipeline not executing
 
