@@ -18,7 +18,6 @@ parameters:
     displayName: 'What to include in the package'
     type: string
     values:
-      - 'All Changes'
       - 'Specific Tasks'
       - 'Specific Commit'
     default: 'All Changes'
@@ -76,10 +75,6 @@ stages:
                 "Specific Commit")
                   echo "##vso[task.setvariable variable=versionType]Specific Commit"
                   echo "##vso[task.setvariable variable=additionalInfo]${{ parameters.commitHash }}"
-                  ;;
-                *)
-                  echo "##vso[task.setvariable variable=versionType]"
-                  echo "##vso[task.setvariable variable=additionalInfo]"
                   ;;
               esac
             displayName: 'Resolve Build Type Parameters'
