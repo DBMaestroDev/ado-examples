@@ -2,6 +2,13 @@
 # Builds a DBmaestro package from source control by task list, commit hash, or all changes.
 # Trigger manually via the Azure DevOps UI and set the required parameters.
 
+resources:
+  repositories:
+    - repository: dbmaestro-cicd
+      type: github
+      name: DBMaestroDev/dbmaestro-cicd
+      endpoint: dbmaestro-cicd  # Replace with your GitHub service connection name if different
+
 parameters:
   - name: packageName
     displayName: 'Package name to build'
@@ -34,7 +41,7 @@ parameters:
     default: '$(Pipeline.Workspace)/DBmaestroAgent.jar'
   - name: runnerPool
     type: string
-    default: 'dbmaestro-linux'
+    default: 'NicolasHosted'
 
 trigger: none
 pr: none
