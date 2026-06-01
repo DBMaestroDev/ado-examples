@@ -1,0 +1,109 @@
+# Example: Build with Branch Name as Package Name (Azure DevOps)
+# Uses the current branch name (or PR source branch) as the package name.
+resources:
+  repositories:
+    - repository: dbmaestro-cicd
+      type: github
+      name: DBMaestroDev/dbmaestro-cicd
+      endpoint: dbmaestro-cicd  # Replace with your GitHub service connection name if different
+
+parameters:
+  - name: projectName
+    type: string
+    default: 'Demo-PSQL'
+  - name: packagesFolder
+    type: string
+    default: 'packages'
+  - name: agentJarPath
+    type: string
+    default: '$(Pipeline.Workspace)/DBmaestroAgent.jar'
+  - name: runnerPool
+    type: string
+    default: 'NicolasHosted'
+
+trigger: none
+
+pr:
+  branches:
+    include:
+      - main
+      - Release_Source
+
+variables:
+  DBMAESTRO_SERVER: $(DBMAESTRO_SERVER)
+  DBMAESTRO_USER: $(DBMAESTRO_USER)
+
+stages:
+  - stage: Setup
+    displayName: 'Setup'
+    jobs:
+      - job: GetCliJar
+        displayName: 'Download DBmaestro CLI'
+        pool: ${{ parameters.runnerPool }}
+        steps:
+          - checkout: dbmaestro-cicd
+            fetchDepth: 1
+          
+          - template: azure-devops/templates/get-cli-jar.yml@dbmaestro-cicd
+            parameters:
+              jarPath: ${{ parameters.agentJarPath }}
+              useWindows: false
+              version: "26.1.2.13455"
+
+  - stage: Build
+    displayName: 'Build Package from Branch Name'
+    dependsOn: Setup
+    jobs:
+      - job: CreateAndPrecheck
+        displayName: 'Create and Precheck Package'
+        pool: ${{ parameters.runnerPool }}
+        variables:
+          packageName: >-
+            $[
+              coalesce(
+                variables['System.PullRequest.SourceBranch'],
+                variables['Build.SourceBranchName']
+              )
+            ]
+        steps:
+          - checkout: self
+
+          - checkout: dbmaestro-cicd
+            fetchDepth: 1
+            
+          - bash: |
+              if [ -n "$(System.PullRequest.SourceBranch)" ]; then
+                # Strip refs/heads/ prefix if present
+                PKG="${SYSTEM_PULLREQUEST_SOURCEBRANCH#refs/heads/}"
+              else
+                PKG="$(Build.SourceBranchName)"
+              fi
+              echo "Resolved package name: $PKG"
+              echo "##vso[task.setvariable variable=resolvedPackageName]$PKG"
+            displayName: 'Resolve Package Name from Branch'
+
+          - template: azure-devops/templates/create-package.yml@dbmaestro-cicd
+            parameters:
+              packageName: $(resolvedPackageName)
+              projectName: ${{ parameters.projectName }}
+              packagesFolder: ${{ parameters.packagesFolder }}
+              agentJarPath: ${{ parameters.agentJarPath }}
+              server: $(DBMAESTRO_SERVER)
+              user: $(DBMAESTRO_USER)
+              password: $(DBMAESTRO_PASSWORD)
+              useSsl: 'True'
+              authType: 'DBmaestroAccount'
+              packageType: 'Regular'
+              useWindows: false
+
+          - template: azure-devops/templates/precheck-package.yml@dbmaestro-cicd
+            parameters:
+              packageName: $(resolvedPackageName)
+              projectName: ${{ parameters.projectName }}
+              agentJarPath: ${{ parameters.agentJarPath }}
+              server: $(DBMAESTRO_SERVER)
+              user: $(DBMAESTRO_USER)
+              password: $(DBMAESTRO_PASSWORD)
+              useSsl: 'True'
+              authType: 'DBmaestroAccount'
+              useWindows: false

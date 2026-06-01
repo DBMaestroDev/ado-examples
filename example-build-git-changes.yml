@@ -1,0 +1,108 @@
+# Example: Build with Git Change Detection (Azure DevOps)
+# Detects which packages changed in the current branch or PR diff and builds them.
+resources:
+  repositories:
+    - repository: dbmaestro-cicd
+      type: github
+      name: DBMaestroDev/dbmaestro-cicd
+      endpoint: dbmaestro-cicd  # Replace with your GitHub service connection name if different
+
+parameters:
+  - name: projectName
+    type: string
+    default: 'Demo-PSQL'
+  - name: packagesFolder
+    type: string
+    default: 'packages'
+  - name: agentJarPath
+    type: string
+    default: '$(Pipeline.Workspace)/DBmaestroAgent.jar'
+  - name: runnerPool
+    type: string
+    default: 'NicolasHosted'
+  - name: baseBranch
+    displayName: 'Base branch to compare against (manual runs)'
+    type: string
+    default: 'main'
+
+trigger: none
+
+pr:
+  branches:
+    include:
+      - main
+      - Release_Source
+
+stages:
+  - stage: Setup
+    displayName: 'Setup'
+    jobs:
+      - job: GetCliJar
+        displayName: 'Download DBmaestro CLI'
+        pool: ${{ parameters.runnerPool }}
+        steps:
+          - checkout: dbmaestro-cicd
+            fetchDepth: 1
+          
+          - template: azure-devops/templates/get-cli-jar.yml@dbmaestro-cicd
+            parameters:
+              jarPath: ${{ parameters.agentJarPath }}
+              useWindows: false
+              version: "26.1.2.13455"
+
+  - stage: Detect
+    displayName: 'Detect Changed Packages'
+    dependsOn: Setup
+    jobs:
+      - job: DetectChanges
+        displayName: 'Detect Changed Packages'
+        pool: ${{ parameters.runnerPool }}
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - checkout: dbmaestro-cicd
+            fetchDepth: 1
+
+          - bash: |
+              IS_PR="false"
+              BASE_REF="${{ parameters.baseBranch }}"
+
+              if [ -n "$(System.PullRequest.TargetBranch)" ]; then
+                IS_PR="true"
+                BASE_REF="${SYSTEM_PULLREQUEST_TARGETBRANCH#refs/heads/}"
+              fi
+
+              echo "##vso[task.setvariable variable=resolvedIsPr]$IS_PR"
+              echo "##vso[task.setvariable variable=resolvedBaseRef]$BASE_REF"
+            displayName: 'Resolve Detection Parameters'
+
+          - template: azure-devops/templates/detect-packages.yml@dbmaestro-cicd
+            parameters:
+              isPullRequest: $(resolvedIsPr)
+              baseRef: $(resolvedBaseRef)
+              detectFromPush: false
+              useWindows: false
+
+  - stage: Build
+    displayName: 'Build Changed Packages'
+    dependsOn: Detect
+    variables:
+      hasPkgs: $[ stageDependencies.Detect.DetectChanges.outputs['detectPackages.has_packages'] ]
+      pkgsList: $[ stageDependencies.Detect.DetectChanges.outputs['detectPackages.packages_list'] ]
+    condition: eq(stageDependencies.Detect.DetectChanges.outputs['detectPackages.has_packages'], 'true')
+    jobs:
+      - template: azure-devops/templates/build-multiple-packages.yml@dbmaestro-cicd
+        parameters:
+          packageNames: $(pkgsList)
+          projectName: ${{ parameters.projectName }}
+          packagesFolder: ${{ parameters.packagesFolder }}
+          agentJarPath: ${{ parameters.agentJarPath }}
+          server: $(DBMAESTRO_SERVER)
+          user: $(DBMAESTRO_USER)
+          password: $(DBMAESTRO_PASSWORD)
+          useSsl: 'True'
+          authType: 'DBmaestroAccount'
+          packageType: 'Regular'
+          runnerPool: ${{ parameters.runnerPool }}
+          useWindows: false

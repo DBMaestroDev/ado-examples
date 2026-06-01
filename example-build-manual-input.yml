@@ -1,0 +1,83 @@
+# Example: Build with Manual Package Selection (Azure DevOps)
+# Manually trigger this pipeline and enter comma-separated package names.
+resources:
+  repositories:
+    - repository: dbmaestro-cicd
+      type: github
+      name: DBMaestroDev/dbmaestro-cicd
+      endpoint: dbmaestro-cicd  # Replace with your GitHub service connection name if different
+
+parameters:
+  - name: packageNames
+    displayName: 'Package names (comma-separated, e.g., V15,V16,V33)'
+    type: string
+  - name: projectName
+    displayName: 'DBmaestro project name'
+    type: string
+    default: 'Demo-PSQL'
+  - name: packagesFolder
+    type: string
+    default: 'packages'
+  - name: agentJarPath
+    type: string
+    default: '$(Pipeline.Workspace)/DBmaestroAgent.jar'
+  - name: runnerPool
+    type: string
+    default: 'NicolasHosted'
+
+trigger: none
+pr: none
+
+stages:
+  - stage: Setup
+    displayName: 'Setup'
+    jobs:
+      - job: GetCliJar
+        displayName: 'Download DBmaestro CLI'
+        pool: ${{ parameters.runnerPool }}
+        steps:
+          - checkout: dbmaestro-cicd
+            fetchDepth: 1
+          
+          - template: azure-devops/templates/get-cli-jar.yml@dbmaestro-cicd
+            parameters:
+              jarPath: ${{ parameters.agentJarPath }}
+              useWindows: false
+              version: "26.1.2.13455"
+
+  - stage: Build
+    displayName: 'Build Packages'
+    dependsOn: Setup
+    jobs:
+      - template: azure-devops/templates/build-multiple-packages.yml@dbmaestro-cicd
+        parameters:
+          packageNames: ${{ parameters.packageNames }}
+          projectName: ${{ parameters.projectName }}
+          packagesFolder: ${{ parameters.packagesFolder }}
+          agentJarPath: ${{ parameters.agentJarPath }}
+          server: $(DBMAESTRO_SERVER)
+          user: $(DBMAESTRO_USER)
+          password: $(DBMAESTRO_PASSWORD)
+          useSsl: 'True'
+          authType: 'DBmaestroAccount'
+          packageType: 'Regular'
+          runnerPool: ${{ parameters.runnerPool }}
+          useWindows: false
+
+  - stage: Summary
+    displayName: 'Pipeline Summary'
+    dependsOn: Build
+    condition: always()
+    jobs:
+      - job: DisplaySummary
+        displayName: 'Display Summary'
+        pool: ${{ parameters.runnerPool }}
+        steps:
+          - bash: |
+              echo "============================================"
+              echo "   DBmaestro Package Build Summary"
+              echo "============================================"
+              echo "Project:  ${{ parameters.projectName }}"
+              echo "Packages: ${{ parameters.packageNames }}"
+              echo "============================================"
+            displayName: 'Print Build Summary'
