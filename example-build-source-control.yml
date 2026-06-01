@@ -31,7 +31,7 @@ parameters:
     default: ''
   - name: agentJarPath
     type: string
-    default: '/home/runner/DBmaestroAgent.jar'
+    default: '$(Pipeline.Workspace)/DBmaestroAgent.jar'
   - name: runnerPool
     type: string
     default: 'NicolasHosted'
