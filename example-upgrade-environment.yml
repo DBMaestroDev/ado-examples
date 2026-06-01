@@ -102,8 +102,6 @@ stages:
               server: $(DBMAESTRO_SERVER)
               user: $(DBMAESTRO_USER)
               password: $(DBMAESTRO_PASSWORD)
-              detectFromPush: $[and(ne(variables['Build.Reason'], 'Manual'), eq(variables['resolvedIsPr'], 'false'))]
-              isPullRequest: $(resolvedIsPr)
               useSsl: 'True'
               authType: 'DBmaestroAccount'
               useWindows: false
