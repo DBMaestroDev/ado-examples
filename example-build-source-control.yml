@@ -24,11 +24,11 @@ parameters:
   - name: tasksList
     displayName: 'Task IDs (comma-separated, optional - used when buildType = Specific Tasks)'
     type: string
-    default: ''
+    default: 'none'
   - name: commitHash
     displayName: 'Commit hash (optional - used when buildType = Specific Commit)'
     type: string
-    default: ''
+    default: 'none'
   - name: agentJarPath
     type: string
     default: '$(Pipeline.Workspace)/DBmaestroAgent.jar'
@@ -74,16 +74,16 @@ stages:
           - bash: |
               case "${{ parameters.buildType }}" in
                 "Specific Tasks")
-                  if [ -z "${{ parameters.tasksList }}" ]; then
-                    echo "##vso[task.logissue type=error]buildType is 'Specific Tasks' but tasksList is empty"
+                  if [ "${{ parameters.tasksList }}" = "none" ] || [ -z "${{ parameters.tasksList }}" ]; then
+                    echo "##vso[task.logissue type=error]buildType is 'Specific Tasks' but tasksList is not provided"
                     exit 1
                   fi
                   echo "##vso[task.setvariable variable=versionType]Tasks"
                   echo "##vso[task.setvariable variable=additionalInfo]${{ parameters.tasksList }}"
                   ;;
                 "Specific Commit")
-                  if [ -z "${{ parameters.commitHash }}" ]; then
-                    echo "##vso[task.logissue type=error]buildType is 'Specific Commit' but commitHash is empty"
+                  if [ "${{ parameters.commitHash }}" = "none" ] || [ -z "${{ parameters.commitHash }}" ]; then
+                    echo "##vso[task.logissue type=error]buildType is 'Specific Commit' but commitHash is not provided"
                     exit 1
                   fi
                   echo "##vso[task.setvariable variable=versionType]Specific Commit"
