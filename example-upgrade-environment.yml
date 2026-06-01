@@ -75,7 +75,7 @@ stages:
         pool: ${{ parameters.runnerPool }}
         steps:
           - checkout: self
-            shallow: true
+            fetchDepth: 1
 
           - bash: |
               # Determine the target environment and whether this is a PR
