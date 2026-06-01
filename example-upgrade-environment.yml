@@ -7,7 +7,7 @@ resources:
       type: github
       name: DBMaestroDev/dbmaestro-cicd
       endpoint: dbmaestro-cicd  # Replace with your GitHub service connection name if different
-      
+
 parameters:
   - name: targetEnvironment
     displayName: 'Target environment for upgrade (manual runs)'
@@ -61,6 +61,7 @@ stages:
             parameters:
               jarPath: ${{ parameters.agentJarPath }}
               useWindows: false
+              version: '26.1.2.13455'
 
   - stage: Upgrade
     displayName: 'Upgrade Environment'
