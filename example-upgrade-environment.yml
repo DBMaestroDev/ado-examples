@@ -57,6 +57,7 @@ stages:
         displayName: 'Download DBmaestro CLI'
         pool: ${{ parameters.runnerPool }}
         steps:
+          - checkout: dbmaestro-cicd
           - template: azure-devops/templates/get-cli-jar.yml@dbmaestro-cicd
             parameters:
               jarPath: ${{ parameters.agentJarPath }}
