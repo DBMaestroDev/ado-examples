@@ -22,11 +22,11 @@ parameters:
       - 'Specific Commit'
     default: 'Specific Tasks'
   - name: tasksList
-    displayName: 'Task IDs (comma-separated, used when buildType = Specific Tasks)'
+    displayName: 'Task IDs (comma-separated, optional - used when buildType = Specific Tasks)'
     type: string
     default: ''
   - name: commitHash
-    displayName: 'Commit hash (used when buildType = Specific Commit)'
+    displayName: 'Commit hash (optional - used when buildType = Specific Commit)'
     type: string
     default: ''
   - name: agentJarPath
@@ -34,7 +34,7 @@ parameters:
     default: '$(Pipeline.Workspace)/DBmaestroAgent.jar'
   - name: runnerPool
     type: string
-    default: 'NicolasHosted'
+    default: 'dbmaestro-linux'
 
 trigger: none
 pr: none
@@ -47,10 +47,15 @@ stages:
         displayName: 'Download DBmaestro CLI'
         pool: ${{ parameters.runnerPool }}
         steps:
+          - checkout: dbmaestro-cicd
+            fetchDepth: 1
+
+          
           - template: azure-devops/templates/get-cli-jar.yml@dbmaestro-cicd
             parameters:
               jarPath: ${{ parameters.agentJarPath }}
               useWindows: false
+              version: "26.1.2.13455"
 
   - stage: Build
     displayName: 'Build Package from Source Control'
@@ -69,10 +74,18 @@ stages:
           - bash: |
               case "${{ parameters.buildType }}" in
                 "Specific Tasks")
+                  if [ -z "${{ parameters.tasksList }}" ]; then
+                    echo "##vso[task.logissue type=error]buildType is 'Specific Tasks' but tasksList is empty"
+                    exit 1
+                  fi
                   echo "##vso[task.setvariable variable=versionType]Tasks"
                   echo "##vso[task.setvariable variable=additionalInfo]${{ parameters.tasksList }}"
                   ;;
                 "Specific Commit")
+                  if [ -z "${{ parameters.commitHash }}" ]; then
+                    echo "##vso[task.logissue type=error]buildType is 'Specific Commit' but commitHash is empty"
+                    exit 1
+                  fi
                   echo "##vso[task.setvariable variable=versionType]Specific Commit"
                   echo "##vso[task.setvariable variable=additionalInfo]${{ parameters.commitHash }}"
                   ;;
