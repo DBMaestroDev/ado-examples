@@ -20,7 +20,7 @@ parameters:
     values:
       - 'Specific Tasks'
       - 'Specific Commit'
-    default: 'All Changes'
+    default: 'Specific Tasks'
   - name: tasksList
     displayName: 'Task IDs (comma-separated, used when buildType = Specific Tasks)'
     type: string
