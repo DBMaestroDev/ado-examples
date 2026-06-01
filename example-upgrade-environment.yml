@@ -58,6 +58,8 @@ stages:
         pool: ${{ parameters.runnerPool }}
         steps:
           - checkout: dbmaestro-cicd
+            fetchDepth: 1
+            
           - template: azure-devops/templates/get-cli-jar.yml@dbmaestro-cicd
             parameters:
               jarPath: ${{ parameters.agentJarPath }}
@@ -77,6 +79,9 @@ stages:
           - checkout: self
             fetchDepth: 1
 
+          - checkout: dbmaestro-cicd
+            fetchDepth: 1
+            
           - bash: |
               # Determine the target environment and whether this is a PR
               if [ -n "$(System.PullRequest.TargetBranch)" ]; then

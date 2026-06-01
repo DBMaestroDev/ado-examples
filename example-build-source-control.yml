@@ -62,6 +62,10 @@ stages:
         pool: ${{ parameters.runnerPool }}
         steps:
           - checkout: self
+            fetchDepth: 1
+
+          - checkout: dbmaestro-cicd
+            fetchDepth: 1
 
           - bash: |
               case "${{ parameters.buildType }}" in
