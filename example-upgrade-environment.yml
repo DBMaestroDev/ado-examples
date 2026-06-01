@@ -1,0 +1,102 @@
+# Example: Upgrade Environment (Azure DevOps)
+# Upgrades a DBmaestro environment on push, pull request, or manual trigger.
+# lockBehavior: sequential prevents concurrent upgrades to the same environment.
+
+parameters:
+  - name: targetEnvironment
+    displayName: 'Target environment for upgrade (manual runs)'
+    type: string
+    default: 'Release_Source'
+    values:
+      - 'Release_Source'
+      - 'QA_Env_1'
+      - 'Prod_Env_1'
+      - 'Prod_Env_3'
+  - name: packageNames
+    displayName: 'Package names to upgrade (comma-separated, leave empty to auto-detect)'
+    type: string
+    default: ''
+  - name: projectName
+    type: string
+    default: 'Demo-PSQL'
+  - name: agentJarPath
+    type: string
+    default: '/home/runner/DBmaestroAgent.jar'
+  - name: runnerPool
+    type: string
+    default: 'NicolasHosted'
+
+# Auto-trigger on pushes to tracked environment branches
+trigger:
+  branches:
+    include:
+      - Release_Source
+      - QA_Env_1
+      - Prod_Env_1
+      - Prod_Env_3
+
+# Run validating upgrade on pull requests targeting environment branches
+pr:
+  branches:
+    include:
+      - QA_Env_1
+      - Prod_Env_1
+      - Prod_Env_3
+
+stages:
+  - stage: Setup
+    displayName: 'Setup'
+    jobs:
+      - job: GetCliJar
+        displayName: 'Download DBmaestro CLI'
+        pool: ${{ parameters.runnerPool }}
+        steps:
+          - template: azure-devops/templates/get-cli-jar.yml@dbmaestro-cicd
+            parameters:
+              jarPath: ${{ parameters.agentJarPath }}
+              useWindows: false
+
+  - stage: Upgrade
+    displayName: 'Upgrade Environment'
+    dependsOn: Setup
+    # lockBehavior: sequential ensures upgrades to the same branch are serialized
+    lockBehavior: sequential
+    jobs:
+      - job: UpgradeEnvironment
+        displayName: 'Upgrade DBmaestro Environment'
+        pool: ${{ parameters.runnerPool }}
+        steps:
+          - checkout: self
+
+          - bash: |
+              # Determine the target environment and whether this is a PR
+              if [ -n "$(System.PullRequest.TargetBranch)" ]; then
+                TARGET="${SYSTEM_PULLREQUEST_TARGETBRANCH#refs/heads/}"
+                IS_PR="true"
+              elif [ "$(Build.Reason)" = "Manual" ]; then
+                TARGET="${{ parameters.targetEnvironment }}"
+                IS_PR="false"
+              else
+                TARGET="$(Build.SourceBranchName)"
+                IS_PR="false"
+              fi
+              echo "Target environment: $TARGET"
+              echo "Is pull request: $IS_PR"
+              echo "##vso[task.setvariable variable=resolvedTarget]$TARGET"
+              echo "##vso[task.setvariable variable=resolvedIsPr]$IS_PR"
+            displayName: 'Resolve Target Environment'
+
+          - template: azure-devops/templates/upgrade-environment.yml@dbmaestro-cicd
+            parameters:
+              packageName: ${{ parameters.packageNames }}
+              projectName: ${{ parameters.projectName }}
+              targetEnvironment: $(resolvedTarget)
+              agentJarPath: ${{ parameters.agentJarPath }}
+              server: $(DBMAESTRO_SERVER)
+              user: $(DBMAESTRO_USER)
+              password: $(DBMAESTRO_PASSWORD)
+              detectFromPush: $[and(ne(variables['Build.Reason'], 'Manual'), eq(variables['resolvedIsPr'], 'false'))]
+              isPullRequest: $(resolvedIsPr)
+              useSsl: 'True'
+              authType: 'DBmaestroAccount'
+              useWindows: false
