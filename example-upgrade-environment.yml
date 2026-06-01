@@ -27,7 +27,7 @@ parameters:
     default: 'Demo-PSQL'
   - name: agentJarPath
     type: string
-    default: '/home/runner/DBmaestroAgent.jar'
+    default: '$(Pipeline.Workspace)/DBmaestroAgent.jar'
   - name: runnerPool
     type: string
     default: 'NicolasHosted'
@@ -75,6 +75,7 @@ stages:
         pool: ${{ parameters.runnerPool }}
         steps:
           - checkout: self
+            shallow: true
 
           - bash: |
               # Determine the target environment and whether this is a PR
