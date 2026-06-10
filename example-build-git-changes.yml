@@ -90,7 +90,7 @@ stages:
     variables:
       hasPkgs: $[ stageDependencies.Detect.DetectChanges.outputs['detectPackages.has_packages'] ]
       pkgsList: $[ stageDependencies.Detect.DetectChanges.outputs['detectPackages.packages_list'] ]
-    condition: eq(stageDependencies.Detect.DetectChanges.outputs['detectPackages.has_packages'], 'true')
+    condition: eq(variables['hasPkgs'], 'true')
     jobs:
       - template: azure-devops/templates/build-multiple-packages.yml@dbmaestro-cicd
         parameters:
